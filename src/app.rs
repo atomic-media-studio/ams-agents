@@ -7,6 +7,7 @@ struct Agent {
     name: String,
     selected: bool,
     instruction: String,
+    input: String,
     limit_token: bool,
     num_predict: String,
 }
@@ -73,6 +74,7 @@ impl eframe::App for MyApp {
                             name: format!("Agent {}", new_id),
                             selected: false,
                             instruction: "You are an assistant".to_string(),
+                            input: String::new(),
                             limit_token: false,
                             num_predict: String::new(),
                         });
@@ -103,7 +105,7 @@ impl eframe::App for MyApp {
                     let agent_id = agent.id;
                     
                     // Agent row - 100% width, 100px height, minimal spacing
-                    ui.allocate_ui_with_layout(
+                    let row_response = ui.allocate_ui_with_layout(
                         egui::Vec2::new(ui.available_width(), 30.0),
                         egui::Layout::left_to_right(egui::Align::Center),
                         |ui| {
@@ -111,7 +113,7 @@ impl eframe::App for MyApp {
                             
                             // Clickable area with background color change
                             let bg_color = if agent.selected {
-                                egui::Color32::from_rgb(60, 60, 60)
+                                egui::Color32::from_rgb(50, 50, 50)
                             } else {
                                 egui::Color32::from_rgb(45, 45, 45)
                             };
@@ -122,7 +124,7 @@ impl eframe::App for MyApp {
                                 .inner_margin(egui::Margin::same(5.0))
                                 .outer_margin(egui::Margin::same(0.0));
                             
-                            let frame_response = frame.show(ui, |ui| {
+                            let _frame_response = frame.show(ui, |ui| {
                                 ui.vertical(|ui| {
                                     ui.spacing_mut().item_spacing = egui::Vec2::new(5.0, 2.0);
                                     
@@ -138,6 +140,35 @@ impl eframe::App for MyApp {
                                         ui.label("Instruction:");
                                         ui.add(egui::TextEdit::singleline(&mut agent.instruction)
                                             .desired_width(200.0));
+                                    });
+                                    
+                                    // Input row with Send button
+                                    ui.horizontal(|ui| {
+                                        ui.label("Input:");
+                                        ui.add(egui::TextEdit::singleline(&mut agent.input)
+                                            .desired_width(200.0));
+                                        
+                                        if ui.button("Send").clicked() {
+                                            let agent_clone = agent.clone();
+                                            let ctx = ctx.clone();
+                                            let handle = self.rt_handle.clone();
+                                            handle.spawn(async move {
+                                                match crate::adk_integration::send_to_ollama(
+                                                    &agent_clone.instruction,
+                                                    &agent_clone.input,
+                                                    agent_clone.limit_token,
+                                                    &agent_clone.num_predict,
+                                                ).await {
+                                                    Ok(_response) => {
+                                                        // Response is already printed during streaming
+                                                    }
+                                                    Err(e) => {
+                                                        eprintln!("Ollama error: {}", e);
+                                                    }
+                                                }
+                                                ctx.request_repaint();
+                                            });
+                                        }
                                     });
                                     
                                     // Limit token checkbox and num_predict row
@@ -175,13 +206,21 @@ impl eframe::App for MyApp {
                                     });
                                 });
                             });
-                            
-                            // Make the whole frame area clickable
-                            if frame_response.response.clicked() {
-                                agent_to_select = Some(agent_id);
-                            }
                         }
                     );
+                    
+                    // Make the entire row clickable - check if clicking anywhere on the row
+                    // We'll check for clicks on the row area, but only select if not clicking on buttons
+                    let row_rect = row_response.response.rect;
+                    let row_id = ui.id().with(agent_id).with("row_click");
+                    let row_interaction = ui.interact(row_rect, row_id, egui::Sense::click());
+                    
+                    // Check if we clicked on the row area
+                    // Note: This will trigger even when clicking buttons, but that's okay
+                    // The buttons will still work, and we'll also select the agent
+                    if row_interaction.clicked() {
+                        agent_to_select = Some(agent_id);
+                    }
                     
                     // No spacing between rows
                 }
