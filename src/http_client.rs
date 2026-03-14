@@ -1,5 +1,36 @@
 use serde::{Serialize, Deserialize};
+use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+static OUTGOING_HTTP_LOG: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
+
+fn outgoing_http_log() -> &'static Mutex<Vec<String>> {
+    OUTGOING_HTTP_LOG.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+fn trim_line(input: &str, max_chars: usize) -> String {
+    let mut out = String::new();
+    for c in input.chars().take(max_chars) {
+        out.push(c);
+    }
+    if input.chars().count() > max_chars {
+        out.push_str("...");
+    }
+    out
+}
+
+fn push_outgoing_http_log_line(line: String) {
+    let mut log = outgoing_http_log().lock().unwrap();
+    log.push(line);
+    if log.len() > 400 {
+        let keep_from = log.len() - 400;
+        log.drain(0..keep_from);
+    }
+}
+
+pub fn get_outgoing_http_log_lines() -> Vec<String> {
+    outgoing_http_log().lock().unwrap().clone()
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ConversationMessage {
@@ -39,6 +70,14 @@ pub async fn send_conversation_message(
         message: message.to_string(),
         timestamp: timestamp_str,
     };
+
+    push_outgoing_http_log_line(format!(
+        "POST {} | conversation | {} -> {} | {}",
+        endpoint,
+        sender_name,
+        receiver_name,
+        trim_line(message, 90),
+    ));
     
     let client = reqwest::Client::new();
     let response = client
@@ -81,6 +120,13 @@ pub async fn send_evaluator_result(
         message: message.to_string(),
         timestamp: timestamp_str,
     };
+    push_outgoing_http_log_line(format!(
+        "POST {} | evaluator {} [{}] | {}",
+        endpoint,
+        evaluator_name,
+        sentiment,
+        trim_line(message, 90),
+    ));
     let client = reqwest::Client::new();
     let response = client.post(endpoint).json(&payload).send().await?;
     if !response.status().is_success() {

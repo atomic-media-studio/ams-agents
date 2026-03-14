@@ -117,106 +117,121 @@ impl eframe::App for MyApp {
                             ui.label(egui::RichText::new("Settings").strong().size(12.0));
                             ui.separator();
 
-                            // Ollama model selection
-                            ui.horizontal(|ui| {
-                                ui.label("Ollama Model:");
-                                let models = self.ollama_models.lock().unwrap().clone();
-                                if self.selected_ollama_model.is_empty() {
-                                    if let Some(first) = models.first() {
-                                        self.selected_ollama_model = first.clone();
-                                    }
-                                }
-                                egui::ComboBox::from_id_source("ollama_model_selector")
-                                    .selected_text(if self.selected_ollama_model.is_empty() {
-                                        "Select model".to_string()
-                                    } else {
-                                        self.selected_ollama_model.clone()
-                                    })
-                                    .show_ui(ui, |ui| {
-                                        for model in &models {
-                                            ui.selectable_value(&mut self.selected_ollama_model, model.clone(), model);
-                                        }
-                                    });
+                            let panel_border_color = ui.visuals().widgets.noninteractive.bg_stroke.color;
+                            let settings_panel = egui::Frame::default()
+                                .fill(settings_bg_color)
+                                .stroke(egui::Stroke::new(1.0, panel_border_color))
+                                .rounding(4.0)
+                                .inner_margin(egui::Margin::same(6.0));
 
-                                let loading = *self.ollama_models_loading.lock().unwrap();
-                                if ui.button(if loading { "Loading" } else { "Refresh" }).clicked() && !loading {
-                                    *self.ollama_models_loading.lock().unwrap() = true;
-                                    let models_arc = self.ollama_models.clone();
-                                    let loading_arc = self.ollama_models_loading.clone();
-                                    let ctx = ctx.clone();
-                                    let handle = self.rt_handle.clone();
-                                    handle.spawn(async move {
-                                        let models = crate::adk_integration::fetch_ollama_models().await.unwrap_or_default();
-                                        *models_arc.lock().unwrap() = models;
-                                        *loading_arc.lock().unwrap() = false;
-                                        ctx.request_repaint();
-                                    });
-                                }
-                            });
-                            ui.add_space(5.0);
-                            
-                            // HTTP Endpoint configuration
-                            ui.horizontal(|ui| {
-                                ui.label("Chat HTTP Endpoint:");
-                                ui.add(egui::TextEdit::singleline(&mut self.http_endpoint)
-                                    .desired_width(200.0));
-                            });
-                            ui.add_space(5.0);
-                            
-                            ui.horizontal(|ui| {
-                                //ui.add_space(20.0);
-                                if ui.button("Create Manager").clicked() {
-                                    let used_ids: std::collections::HashSet<usize> =
-                                        self.managers.iter().map(|m| m.id).collect();
-                                    let mut new_id = 1;
-                                    while used_ids.contains(&new_id) {
-                                        new_id += 1;
-                                    }
-                                    self.managers.push(AgentManager {
-                                        id: new_id,
-                                        name: format!("Agent Manager {}", new_id),
-                                    });
-                                    if new_id >= self.next_manager_id {
-                                        self.next_manager_id = new_id + 1;
-                                    }
-                                }
-                                ui.add_space(6.0);
-
-                                if ui.button("Test API").clicked() {
-                                    println!("Pinging Ollama");
-                                    let ctx = ctx.clone();
-                                    let handle = self.rt_handle.clone();
-                                    let model = self.selected_ollama_model.clone();
-                                    handle.spawn(async move {
-                                        match crate::adk_integration::test_ollama(
-                                            if model.trim().is_empty() { None } else { Some(model.as_str()) }
-                                        ).await {
-                                            Ok(_response) => {
-                                                // Response is already printed during streaming in test_ollama()
-                                            }
-                                            Err(e) => {
-                                                eprintln!("Ollama error: {}", e);
-                                            }
+                            settings_panel.show(ui, |ui| {
+                                // Ollama model selection
+                                ui.horizontal(|ui| {
+                                    ui.label("Ollama Model:");
+                                    let models = self.ollama_models.lock().unwrap().clone();
+                                    if self.selected_ollama_model.is_empty() {
+                                        if let Some(first) = models.first() {
+                                            self.selected_ollama_model = first.clone();
                                         }
-                                        ctx.request_repaint();
-                                    });
-                                }
+                                    }
+                                    egui::ComboBox::from_id_source("ollama_model_selector")
+                                        .selected_text(if self.selected_ollama_model.is_empty() {
+                                            "Select model".to_string()
+                                        } else {
+                                            self.selected_ollama_model.clone()
+                                        })
+                                        .show_ui(ui, |ui| {
+                                            for model in &models {
+                                                ui.selectable_value(&mut self.selected_ollama_model, model.clone(), model);
+                                            }
+                                        });
+
+                                    let loading = *self.ollama_models_loading.lock().unwrap();
+                                    if ui.button(if loading { "Loading" } else { "Refresh" }).clicked() && !loading {
+                                        *self.ollama_models_loading.lock().unwrap() = true;
+                                        let models_arc = self.ollama_models.clone();
+                                        let loading_arc = self.ollama_models_loading.clone();
+                                        let ctx = ctx.clone();
+                                        let handle = self.rt_handle.clone();
+                                        handle.spawn(async move {
+                                            let models = crate::adk_integration::fetch_ollama_models().await.unwrap_or_default();
+                                            *models_arc.lock().unwrap() = models;
+                                            *loading_arc.lock().unwrap() = false;
+                                            ctx.request_repaint();
+                                        });
+                                    }
+                                });
+                                ui.add_space(5.0);
+
+                                // HTTP Endpoint configuration
+                                ui.horizontal(|ui| {
+                                    ui.label("Chat HTTP Endpoint:");
+                                    ui.add(egui::TextEdit::singleline(&mut self.http_endpoint)
+                                        .desired_width(200.0));
+                                });
+                                ui.add_space(5.0);
+
+                                ui.horizontal(|ui| {
+                                    if ui.button("Create Manager").clicked() {
+                                        let used_ids: std::collections::HashSet<usize> =
+                                            self.managers.iter().map(|m| m.id).collect();
+                                        let mut new_id = 1;
+                                        while used_ids.contains(&new_id) {
+                                            new_id += 1;
+                                        }
+                                        self.managers.push(AgentManager {
+                                            id: new_id,
+                                            name: format!("Agent Manager {}", new_id),
+                                        });
+                                        if new_id >= self.next_manager_id {
+                                            self.next_manager_id = new_id + 1;
+                                        }
+                                    }
+                                    ui.add_space(6.0);
+
+                                    if ui.button("Test API").clicked() {
+                                        println!("Pinging Ollama");
+                                        let ctx = ctx.clone();
+                                        let handle = self.rt_handle.clone();
+                                        let model = self.selected_ollama_model.clone();
+                                        handle.spawn(async move {
+                                            match crate::adk_integration::test_ollama(
+                                                if model.trim().is_empty() { None } else { Some(model.as_str()) }
+                                            ).await {
+                                                Ok(_response) => {
+                                                    // Response is already printed during streaming in test_ollama()
+                                                }
+                                                Err(e) => {
+                                                    eprintln!("Ollama error: {}", e);
+                                                }
+                                            }
+                                            ctx.request_repaint();
+                                        });
+                                    }
+                                });
                             });
                         });
                     });
                 
                 ui.separator();
-                
-                // Scrollable area for agents with green border - full width
-                let available_width = ui.available_width() - 12.0;
-                egui::Frame::default()
-                    .fill(egui::Color32::from_rgb(40, 40, 40))
-                    //.stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(0, 255, 0)))
-                    .inner_margin(egui::Margin { left: 6.0, right: 6.0, top: 6.0, bottom: 6.0 })
-                    .rounding(4.0)
-                    .show(ui, |ui| {
-                        ui.set_width(available_width);
-                        egui::ScrollArea::vertical().show(ui, |ui| {
+                let outgoing_http_height = 160.0;
+                let workspace_height = (ui.available_height() - outgoing_http_height - 8.0).max(0.0);
+                let workspace_width = ui.available_width();
+
+                ui.allocate_ui_with_layout(
+                    egui::vec2(workspace_width, workspace_height),
+                    egui::Layout::top_down(egui::Align::Min),
+                    |ui| {
+                        // Scrollable area for agents with green border - full width
+                        let available_width = ui.available_width() - 12.0;
+                        egui::Frame::default()
+                            .fill(egui::Color32::from_rgb(40, 40, 40))
+                            //.stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(0, 255, 0)))
+                            .inner_margin(egui::Margin { left: 6.0, right: 6.0, top: 6.0, bottom: 6.0 })
+                            .rounding(4.0)
+                            .show(ui, |ui| {
+                                ui.set_width(available_width);
+                                egui::ScrollArea::vertical().show(ui, |ui| {
                         
                 // Collect IDs of managers/agents/evaluators to remove
                 let mut managers_to_remove = Vec::new();
@@ -983,7 +998,51 @@ impl eframe::App for MyApp {
                 for id in evaluators_to_remove {
                     self.evaluators.retain(|e| e.id != id);
                 }
-                    });
+                            });
+                    },
+                );
+
+                ui.separator();
+                let panel_border_color = ui.visuals().widgets.noninteractive.bg_stroke.color;
+                let outgoing_panel = egui::Frame::default()
+                    .fill(egui::Color32::from_rgb(40, 40, 40))
+                    .stroke(egui::Stroke::new(1.0, panel_border_color))
+                    .rounding(4.0)
+                    .inner_margin(egui::Margin::same(6.0));
+                let terminal_frame = egui::Frame::default()
+                    .fill(egui::Color32::from_rgb(0, 0, 0))
+                    .stroke(egui::Stroke::new(1.0, panel_border_color))
+                    .inner_margin(egui::Margin::same(6.0))
+                    .rounding(4.0);
+                ui.allocate_ui_with_layout(
+                    egui::vec2(ui.available_width(), outgoing_http_height),
+                    egui::Layout::top_down(egui::Align::Min),
+                    |ui| {
+                        outgoing_panel.show(ui, |ui| {
+                            ui.set_min_height(outgoing_http_height);
+                            ui.set_max_height(outgoing_http_height);
+                            ui.label(egui::RichText::new("Outgoing HTTP").strong().size(12.0));
+                            ui.add_space(4.0);
+                            let terminal_height = ui.available_height().max(0.0);
+                            terminal_frame.show(ui, |ui| {
+                                ui.set_min_width(ui.available_width());
+                                ui.set_min_height(terminal_height);
+                                ui.set_max_height(terminal_height);
+                                let lines = crate::http_client::get_outgoing_http_log_lines();
+                                egui::ScrollArea::vertical().stick_to_bottom(true).show(ui, |ui| {
+                                    for line in lines {
+                                        ui.label(
+                                            egui::RichText::new(line)
+                                                .monospace()
+                                                .size(10.0)
+                                                .color(egui::Color32::from_rgb(180, 220, 180)),
+                                        );
+                                    }
+                                });
+                            });
+                        });
+                    },
+                );
                 });
             });
         });
