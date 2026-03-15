@@ -341,64 +341,59 @@ impl eframe::App for MyApp {
                                     }
                                 });
                                 ui.separator();
-                                for (agent_id, manager_id, agent_name) in &agent_names {
-                                    if *manager_id != manager.id {
-                                        continue;
-                                    }
-                                    ui.horizontal(|ui| {
-                                        if ui.button("Status").clicked() {
-                                            if let Some(agent) = self.agents.iter().find(|a| a.id == *agent_id) {
-                                                println!("=== Agent {} Status ===", agent.id);
-                                                println!("Manager: {}", agent.manager_id);
-                                                println!("Name: {}", agent.name);
-                                                println!("Instruction: {}", agent.instruction);
-                                                println!("Limit Token: {}", agent.limit_token);
-                                                if agent.limit_token {
-                                                    println!("num_predict: {}", agent.num_predict);
-                                                }
-                                                println!("Selected: {}", agent.selected);
-                                                println!("In Conversation: {}", agent.in_conversation);
-                                                if agent.in_conversation {
-                                                    println!("Topic: {}", agent.conversation_topic);
-                                                    if let Some(pid) = agent.conversation_partner_id {
-                                                        println!("Partner: Agent {}", pid);
+                                let worker_count = self
+                                    .agents
+                                    .iter()
+                                    .filter(|a| a.manager_id == manager.id)
+                                    .count();
+                                let evaluator_count = self
+                                    .evaluators
+                                    .iter()
+                                    .filter(|e| e.manager_id == manager.id)
+                                    .count();
+
+                                egui::CollapsingHeader::new(format!("Agent Workers ({})", worker_count))
+                                    .id_source(ui.id().with(manager.id).with("workers_section"))
+                                    .default_open(true)
+                                    .show(ui, |ui| {
+                                        for (agent_id, manager_id, agent_name) in &agent_names {
+                                            if *manager_id != manager.id {
+                                                continue;
+                                            }
+                                            ui.horizontal(|ui| {
+                                                if ui.button("Status").clicked() {
+                                                    if let Some(agent) = self.agents.iter().find(|a| a.id == *agent_id) {
+                                                        println!("=== Agent {} Status ===", agent.id);
+                                                        println!("Manager: {}", agent.manager_id);
+                                                        println!("Name: {}", agent.name);
+                                                        println!("Instruction: {}", agent.instruction);
+                                                        println!("Limit Token: {}", agent.limit_token);
+                                                        if agent.limit_token {
+                                                            println!("num_predict: {}", agent.num_predict);
+                                                        }
+                                                        println!("Selected: {}", agent.selected);
+                                                        println!("In Conversation: {}", agent.in_conversation);
+                                                        if agent.in_conversation {
+                                                            println!("Topic: {}", agent.conversation_topic);
+                                                            if let Some(pid) = agent.conversation_partner_id {
+                                                                println!("Partner: Agent {}", pid);
+                                                            }
+                                                        }
+                                                        println!("======================");
                                                     }
                                                 }
-                                                println!("======================");
-                                            }
+                                                if ui.button("Erase").clicked() {
+                                                    agents_to_remove.push(*agent_id);
+                                                }
+                                                ui.label(agent_name);
+                                            });
                                         }
-                                        if ui.button("Erase").clicked() {
-                                            agents_to_remove.push(*agent_id);
-                                        }
-                                        ui.label(agent_name);
-                                    });
-                                }
-                                for (eval_id, manager_id, eval_name) in &evaluator_names {
-                                    if *manager_id != manager.id {
-                                        continue;
-                                    }
-                                    ui.horizontal(|ui| {
-                                        if ui.button("Status").clicked() {
-                                            if let Some(e) = self.evaluators.iter().find(|x| x.id == *eval_id) {
-                                                println!("=== Evaluator {} Status ===", e.id);
-                                                println!("Manager: {}", e.manager_id);
-                                                println!("Name: {}", e.name);
-                                                println!("Instruction: {}", e.instruction);
-                                                println!("========================");
-                                            }
-                                        }
-                                        if ui.button("Erase").clicked() {
-                                            evaluators_to_remove.push(*eval_id);
-                                        }
-                                        ui.label(eval_name);
-                                    });
-                                }
 
-                                ui.separator();
-                                ui.add_space(6.0);
+                                        ui.separator();
+                                        ui.add_space(6.0);
 
-                                // Display child blocks inside this manager rectangle
-                                for agent in &mut self.agents {
+                                        // Display child blocks inside this manager rectangle
+                                        for agent in &mut self.agents {
                                     if agent.manager_id != manager.id {
                                         continue;
                                     }
@@ -732,8 +727,37 @@ impl eframe::App for MyApp {
                                     });
                                     ui.add_space(6.0);
                                 }
+                                    });
 
-                                for evaluator in &mut self.evaluators {
+                                egui::CollapsingHeader::new(format!("Agent Evaluators ({})", evaluator_count))
+                                    .id_source(ui.id().with(manager.id).with("evaluators_section"))
+                                    .default_open(true)
+                                    .show(ui, |ui| {
+                                        for (eval_id, manager_id, eval_name) in &evaluator_names {
+                                            if *manager_id != manager.id {
+                                                continue;
+                                            }
+                                            ui.horizontal(|ui| {
+                                                if ui.button("Status").clicked() {
+                                                    if let Some(e) = self.evaluators.iter().find(|x| x.id == *eval_id) {
+                                                        println!("=== Evaluator {} Status ===", e.id);
+                                                        println!("Manager: {}", e.manager_id);
+                                                        println!("Name: {}", e.name);
+                                                        println!("Instruction: {}", e.instruction);
+                                                        println!("========================");
+                                                    }
+                                                }
+                                                if ui.button("Erase").clicked() {
+                                                    evaluators_to_remove.push(*eval_id);
+                                                }
+                                                ui.label(eval_name);
+                                            });
+                                        }
+
+                                        ui.separator();
+                                        ui.add_space(6.0);
+
+                                        for evaluator in &mut self.evaluators {
                                     if evaluator.manager_id != manager.id {
                                         continue;
                                     }
@@ -800,9 +824,9 @@ impl eframe::App for MyApp {
                                                         sentiment,
                                                         &response,
                                                     ).await {
-                                                        eprintln!("[Evaluator] Failed to send to web-chat: {}", e);
+                                                        eprintln!("[Evaluator] Failed to send to ams-chat: {}", e);
                                                     } else {
-                                                        println!("[Evaluator] Sent to web-chat: {} -> {}", sentiment, &response[..response.len().min(60)]);
+                                                        println!("[Evaluator] Sent to ams-chat: {} -> {}", sentiment, &response[..response.len().min(60)]);
                                                     }
                                                 }
                                                 Err(e) => eprintln!("Ollama error: {}", e),
@@ -947,9 +971,9 @@ impl eframe::App for MyApp {
                                                                                     sentiment,
                                                                                     &response,
                                                                                 ).await {
-                                                                                    eprintln!("[Evaluator] Failed to send to web-chat: {}", e);
+                                                                                    eprintln!("[Evaluator] Failed to send to ams-chat: {}", e);
                                                                                 } else {
-                                                                                    println!("[Evaluator] Sent to web-chat: {} -> {}", sentiment, &response[..response.len().min(60)]);
+                                                                                    println!("[Evaluator] Sent to ams-chat: {} -> {}", sentiment, &response[..response.len().min(60)]);
                                                                                 }
                                                                             }
                                                                             Err(e) => eprintln!("[Evaluator] Ollama error: {}", e),
@@ -966,6 +990,7 @@ impl eframe::App for MyApp {
                                     });
                                     ui.add_space(6.0);
                                 }
+                                    });
                             });
                         });
                     });
@@ -1035,7 +1060,7 @@ impl eframe::App for MyApp {
                                             egui::RichText::new(line)
                                                 .monospace()
                                                 .size(10.0)
-                                                .color(egui::Color32::from_rgb(180, 220, 180)),
+                                                .color(egui::Color32::WHITE),
                                         );
                                     }
                                 });

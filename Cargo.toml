@@ -1,5 +1,5 @@
 [package]
-name = "web-agents"
+name = "ams-agents"
 description = "A multi-agent visualiser application in Rust"
 version = "0.1.0"
 edition = "2024"

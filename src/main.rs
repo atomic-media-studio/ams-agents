@@ -22,12 +22,12 @@ fn main() -> eframe::Result<()> {
     });
 
     let options = eframe::NativeOptions {
-        viewport: eframe::egui::ViewportBuilder::default().with_inner_size([720.0, 860.0]),
+        viewport: eframe::egui::ViewportBuilder::default().with_inner_size([740.0, 1000.0]),
         ..Default::default()
     };
 
     eframe::run_native(
-        "web-agents",
+        "ams-agents",
         options,
         Box::new(move |_cc| Ok(Box::new(MyApp::new(rt_handle.clone())))),
     )

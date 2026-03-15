@@ -79,7 +79,7 @@ pub async fn send_to_ollama_with_context(
     // Create session
     let session = session_service
         .create(CreateRequest {
-            app_name: "web-agents".to_string(),
+            app_name: "ams-agents".to_string(),
             user_id: "user1".to_string(),
             session_id: None,
             state: std::collections::HashMap::new(),
@@ -88,7 +88,7 @@ pub async fn send_to_ollama_with_context(
 
     // Create runner
     let runner = Runner::new(RunnerConfig {
-        app_name: "web-agents".to_string(),
+        app_name: "ams-agents".to_string(),
         agent: Arc::new(agent),
         session_service,
         artifact_service: None,
@@ -194,7 +194,7 @@ pub async fn test_ollama(model_override: Option<&str>) -> Result<String> {
     // Create session
     let session = session_service
         .create(CreateRequest {
-            app_name: "web-agents".to_string(),
+            app_name: "ams-agents".to_string(),
             user_id: "user1".to_string(),
             session_id: None,
             state: std::collections::HashMap::new(),
@@ -203,7 +203,7 @@ pub async fn test_ollama(model_override: Option<&str>) -> Result<String> {
 
     // Create runner
     let runner = Runner::new(RunnerConfig {
-        app_name: "web-agents".to_string(),
+        app_name: "ams-agents".to_string(),
         agent: Arc::new(agent),
         session_service,
         artifact_service: None,
