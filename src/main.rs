@@ -1,9 +1,4 @@
-mod app;
-mod adk_integration;
-mod http_client;
-mod conversation_loop;
-
-use app::MyApp;
+use ams_agents::AMSAgentsApp;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 
@@ -22,13 +17,13 @@ fn main() -> eframe::Result<()> {
     });
 
     let options = eframe::NativeOptions {
-        viewport: eframe::egui::ViewportBuilder::default().with_inner_size([740.0, 1000.0]),
+        viewport: eframe::egui::ViewportBuilder::default().with_inner_size([1024.0, 1024.0]),
         ..Default::default()
     };
 
     eframe::run_native(
         "ams-agents",
         options,
-        Box::new(move |_cc| Ok(Box::new(MyApp::new(rt_handle.clone())))),
+        Box::new(move |_cc| Ok(Box::new(AMSAgentsApp::new(rt_handle.clone())))),
     )
 }

@@ -7,6 +7,7 @@ use futures_util::StreamExt;
 use std::sync::Arc;
 use anyhow::Result;
 use serde::Deserialize;
+use std::io::Write;
 
 #[derive(Deserialize)]
 struct OllamaTagsResponse {
@@ -16,6 +17,15 @@ struct OllamaTagsResponse {
 #[derive(Deserialize)]
 struct OllamaTagModel {
     name: String,
+}
+
+const APP_NAME: &str = "ams-agents";
+const USER_ID: &str = "user1";
+const AGENT_NAME: &str = "local-assistant";
+
+struct RunnerContext {
+    runner: Runner,
+    session_id: String,
 }
 
 fn resolve_model_name(model_override: Option<&str>) -> String {
@@ -31,9 +41,12 @@ pub async fn fetch_ollama_models() -> Result<Vec<String>> {
     let url = std::env::var("OLLAMA_TAGS_URL")
         .unwrap_or_else(|_| "http://127.0.0.1:11434/api/tags".to_string());
     let client = reqwest::Client::new();
-    let response = client.get(url).send().await?;
+    let response = client.get(url).send().await?.error_for_status()?;
     let tags = response.json::<OllamaTagsResponse>().await?;
-    Ok(tags.models.into_iter().map(|m| m.name).collect())
+    let mut models: Vec<String> = tags.models.into_iter().map(|m| m.name).collect();
+    models.sort();
+    models.dedup();
+    Ok(models)
 }
 
 pub async fn send_to_ollama(
@@ -53,42 +66,57 @@ pub async fn send_to_ollama_with_context(
     num_predict: &str,
     model_override: Option<&str>,
 ) -> Result<String> {
-    // Create Ollama model configuration
+    let runner_ctx = build_runner_context(instruction, limit_token, num_predict, model_override).await?;
+    print_context_preview(input);
+    run_prompt_streaming(runner_ctx, input, false).await
+}
+
+pub async fn test_ollama(model_override: Option<&str>) -> Result<String> {
+    let runner_ctx = build_runner_context(
+        "You are a helpful assistant running locally via Ollama.",
+        false,
+        "",
+        model_override,
+    )
+    .await?;
+    let input = "Hello, how are you?";
+    println!("Input: {}", input);
+    run_prompt_streaming(runner_ctx, input, true).await
+}
+
+async fn build_runner_context(
+    instruction: &str,
+    limit_token: bool,
+    num_predict: &str,
+    model_override: Option<&str>,
+) -> Result<RunnerContext> {
     let model_name = resolve_model_name(model_override);
     let mut config = OllamaConfig::new(&model_name);
-    
-    // Set num_ctx if limit_token is enabled
     if limit_token {
         if let Ok(num) = num_predict.parse::<u32>() {
             config.num_ctx = Some(num);
         }
     }
-    
     let model = OllamaModel::new(config)?;
 
-    // Create agent with custom instruction
-    let agent = LlmAgentBuilder::new("local-assistant")
+    let agent = LlmAgentBuilder::new(AGENT_NAME)
         .description("A helpful local assistant")
         .model(Arc::new(model))
         .instruction(instruction)
         .build()?;
 
-    // Create session service
     let session_service = Arc::new(InMemorySessionService::new());
-    
-    // Create session
     let session = session_service
         .create(CreateRequest {
-            app_name: "ams-agents".to_string(),
-            user_id: "user1".to_string(),
+            app_name: APP_NAME.to_string(),
+            user_id: USER_ID.to_string(),
             session_id: None,
             state: std::collections::HashMap::new(),
         })
         .await?;
 
-    // Create runner
     let runner = Runner::new(RunnerConfig {
-        app_name: "ams-agents".to_string(),
+        app_name: APP_NAME.to_string(),
         agent: Arc::new(agent),
         session_service,
         artifact_service: None,
@@ -98,68 +126,46 @@ pub async fn send_to_ollama_with_context(
         compaction_config: None,
     })?;
 
-    // Create content with input text
+    Ok(RunnerContext {
+        runner,
+        session_id: session.id().to_string(),
+    })
+}
+
+async fn run_prompt_streaming(runner_ctx: RunnerContext, input: &str, print_response_prefix: bool) -> Result<String> {
     let user_content = Content::new("user").with_text(input);
-    
-    // Extract and print the input prompt (truncated for conversation context)
-    let input_text = user_content.parts.iter()
-        .find_map(|p| match p {
-            adk_core::Part::Text { text } => Some(text.as_str()),
-            _ => None,
-        })
-        .unwrap_or("");
-    
-    // Print truncated input for conversation context (safe UTF-8 truncation)
-    if !input_text.is_empty() {
-        // Truncate to approximately 200 bytes, but ensure we don't split UTF-8 characters
-        let max_bytes = 200;
-        if input_text.len() > max_bytes {
-            // Find the last valid character boundary before max_bytes
-            let mut truncate_at = max_bytes;
-            while !input_text.is_char_boundary(truncate_at) && truncate_at > 0 {
-                truncate_at -= 1;
-            }
-            println!("Context: {}...", &input_text[..truncate_at]);
-        } else {
-            println!("Context: {}", input_text);
-        }
-    }
-    
-    // Send prompt to Ollama
-    let mut stream = runner
-        .run("user1".to_string(), session.id().to_string(), user_content)
+    let mut stream = runner_ctx
+        .runner
+        .run(USER_ID.to_string(), runner_ctx.session_id, user_content)
         .await?;
-    
-    // Collect the stream events and print tokens as they come
+
     let mut response_parts = Vec::new();
-    
+    if print_response_prefix {
+        print!("Response: ");
+        let _ = std::io::stdout().flush();
+    }
+
     while let Some(event_result) = stream.next().await {
         match event_result {
             Ok(event) => {
-                // Extract text from llm_response.content.parts
                 if let Some(content) = event.llm_response.content.as_ref() {
                     for part in &content.parts {
-                        match part {
-                            adk_core::Part::Text { text } => {
-                                // Print token as it arrives (streaming)
-                                print!("{}", text);
-                                std::io::Write::flush(&mut std::io::stdout()).unwrap();
-                                response_parts.push(text.clone());
-                            }
-                            _ => {
-                                // Handle other part types if needed
-                            }
+                        if let adk_core::Part::Text { text } = part {
+                            print!("{}", text);
+                            let _ = std::io::stdout().flush();
+                            response_parts.push(text.clone());
                         }
                     }
                 }
-                
-                // Check if this is the final event (turn_complete = true)
+
                 if event.llm_response.turn_complete {
                     if let Some(usage) = &event.llm_response.usage_metadata {
-                        println!("\n[Tokens: prompt={}, candidates={}, total={}]", 
-                            usage.prompt_token_count, 
-                            usage.candidates_token_count, 
-                            usage.total_token_count);
+                        println!(
+                            "\n[Tokens: prompt={}, candidates={}, total={}]",
+                            usage.prompt_token_count,
+                            usage.candidates_token_count,
+                            usage.total_token_count
+                        );
                     }
                 }
             }
@@ -169,110 +175,25 @@ pub async fn send_to_ollama_with_context(
             }
         }
     }
-    
+
     println!();
     Ok(response_parts.join(""))
 }
 
-pub async fn test_ollama(model_override: Option<&str>) -> Result<String> {
-    // Create Ollama model configuration
-    // Assumes Ollama is running on localhost:11434
-    let model_name = resolve_model_name(model_override);
-    let config = OllamaConfig::new(&model_name);
-    let model = OllamaModel::new(config)?;
-
-    // Create agent
-    let agent = LlmAgentBuilder::new("local-assistant")
-        .description("A helpful local assistant")
-        .model(Arc::new(model))
-        .instruction("You are a helpful assistant running locally via Ollama.")
-        .build()?;
-
-    // Create session service
-    let session_service = Arc::new(InMemorySessionService::new());
-    
-    // Create session
-    let session = session_service
-        .create(CreateRequest {
-            app_name: "ams-agents".to_string(),
-            user_id: "user1".to_string(),
-            session_id: None,
-            state: std::collections::HashMap::new(),
-        })
-        .await?;
-
-    // Create runner
-    let runner = Runner::new(RunnerConfig {
-        app_name: "ams-agents".to_string(),
-        agent: Arc::new(agent),
-        session_service,
-        artifact_service: None,
-        memory_service: None,
-        plugin_manager: None,
-        run_config: None,
-        compaction_config: None,
-    })?;
-
-    // Create content with text
-    let user_content = Content::new("user").with_text("Hello, how are you?");
-    
-    // Extract and print the input prompt
-    let input_text = user_content.parts.iter()
-        .find_map(|p| match p {
-            adk_core::Part::Text { text } => Some(text.as_str()),
-            _ => None,
-        })
-        .unwrap_or("");
-    println!("Input: {}", input_text);
-    
-    // Send a simple test prompt - run takes user_id, session_id, and content
-    let mut stream = runner
-        .run("user1".to_string(), session.id().to_string(), user_content)
-        .await?;
-    
-    // Collect the stream events and print tokens as they come
-    let mut response_parts = Vec::new();
-    print!("Response: ");
-    
-    while let Some(event_result) = stream.next().await {
-        match event_result {
-            Ok(event) => {
-                // Extract text from llm_response.content.parts
-                // event.llm_response is a direct field, not an Option
-                if let Some(content) = event.llm_response.content.as_ref() {
-                    for part in &content.parts {
-                        match part {
-                            adk_core::Part::Text { text } => {
-                                // Print token as it arrives (streaming)
-                                print!("{}", text);
-                                std::io::Write::flush(&mut std::io::stdout()).unwrap();
-                                response_parts.push(text.clone());
-                            }
-                            _ => {
-                                // Handle other part types if needed
-                            }
-                        }
-                    }
-                }
-                
-                // Check if this is the final event (turn_complete = true)
-                if event.llm_response.turn_complete {
-                    if let Some(usage) = &event.llm_response.usage_metadata {
-                        println!("\n\n[Tokens: prompt={}, candidates={}, total={}]", 
-                            usage.prompt_token_count, 
-                            usage.candidates_token_count, 
-                            usage.total_token_count);
-                    }
-                }
-            }
-            Err(e) => {
-                println!("\n[Stream error: {}]", e);
-                return Err(anyhow::anyhow!("Stream error: {}", e));
-            }
-        }
+fn print_context_preview(input_text: &str) {
+    if input_text.is_empty() {
+        return;
     }
-    
-    println!();
-    Ok(response_parts.join(""))
+
+    let max_bytes = 200;
+    if input_text.len() > max_bytes {
+        let mut truncate_at = max_bytes;
+        while !input_text.is_char_boundary(truncate_at) && truncate_at > 0 {
+            truncate_at -= 1;
+        }
+        println!("Context: {}...", &input_text[..truncate_at]);
+    } else {
+        println!("Context: {}", input_text);
+    }
 }
 
