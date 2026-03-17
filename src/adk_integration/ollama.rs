@@ -1,13 +1,17 @@
 use adk_agent::LlmAgentBuilder;
+use adk_core::Content;
 use adk_model::ollama::{OllamaConfig, OllamaModel};
 use adk_runner::{Runner, RunnerConfig};
 use adk_session::{CreateRequest, InMemorySessionService, SessionService};
-use adk_core::Content;
-use futures_util::StreamExt;
-use std::sync::Arc;
 use anyhow::Result;
+use futures_util::StreamExt;
 use serde::Deserialize;
 use std::io::Write;
+use std::sync::Arc;
+
+const APP_NAME: &str = "ams-agents";
+const USER_ID: &str = "user1";
+const AGENT_NAME: &str = "local-assistant";
 
 #[derive(Deserialize)]
 struct OllamaTagsResponse {
@@ -19,25 +23,12 @@ struct OllamaTagModel {
     name: String,
 }
 
-const APP_NAME: &str = "ams-agents";
-const USER_ID: &str = "user1";
-const AGENT_NAME: &str = "local-assistant";
-
-struct RunnerContext {
-    runner: Runner,
-    session_id: String,
+pub(crate) struct RunnerContext {
+    pub(crate) runner: Runner,
+    pub(crate) session_id: String,
 }
 
-fn resolve_model_name(model_override: Option<&str>) -> String {
-    if let Some(model) = model_override {
-        if !model.trim().is_empty() {
-            return model.to_string();
-        }
-    }
-    std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "glm-4.7-flash:latest".to_string())
-}
-
-pub async fn fetch_ollama_models() -> Result<Vec<String>> {
+pub(crate) async fn fetch_models() -> Result<Vec<String>> {
     let url = std::env::var("OLLAMA_TAGS_URL")
         .unwrap_or_else(|_| "http://127.0.0.1:11434/api/tags".to_string());
     let client = reqwest::Client::new();
@@ -49,42 +40,7 @@ pub async fn fetch_ollama_models() -> Result<Vec<String>> {
     Ok(models)
 }
 
-pub async fn send_to_ollama(
-    instruction: &str,
-    input: &str,
-    limit_token: bool,
-    num_predict: &str,
-    model_override: Option<&str>,
-) -> Result<String> {
-    send_to_ollama_with_context(instruction, input, limit_token, num_predict, model_override).await
-}
-
-pub async fn send_to_ollama_with_context(
-    instruction: &str,
-    input: &str,
-    limit_token: bool,
-    num_predict: &str,
-    model_override: Option<&str>,
-) -> Result<String> {
-    let runner_ctx = build_runner_context(instruction, limit_token, num_predict, model_override).await?;
-    print_context_preview(input);
-    run_prompt_streaming(runner_ctx, input, false).await
-}
-
-pub async fn test_ollama(model_override: Option<&str>) -> Result<String> {
-    let runner_ctx = build_runner_context(
-        "You are a helpful assistant running locally via Ollama.",
-        false,
-        "",
-        model_override,
-    )
-    .await?;
-    let input = "Hello, how are you?";
-    println!("Input: {}", input);
-    run_prompt_streaming(runner_ctx, input, true).await
-}
-
-async fn build_runner_context(
+pub(crate) async fn build_runner_context(
     instruction: &str,
     limit_token: bool,
     num_predict: &str,
@@ -132,7 +88,11 @@ async fn build_runner_context(
     })
 }
 
-async fn run_prompt_streaming(runner_ctx: RunnerContext, input: &str, print_response_prefix: bool) -> Result<String> {
+pub(crate) async fn run_prompt_streaming(
+    runner_ctx: RunnerContext,
+    input: &str,
+    print_response_prefix: bool,
+) -> Result<String> {
     let user_content = Content::new("user").with_text(input);
     let mut stream = runner_ctx
         .runner
@@ -180,7 +140,7 @@ async fn run_prompt_streaming(runner_ctx: RunnerContext, input: &str, print_resp
     Ok(response_parts.join(""))
 }
 
-fn print_context_preview(input_text: &str) {
+pub(crate) fn print_context_preview(input_text: &str) {
     if input_text.is_empty() {
         return;
     }
@@ -197,3 +157,11 @@ fn print_context_preview(input_text: &str) {
     }
 }
 
+fn resolve_model_name(model_override: Option<&str>) -> String {
+    if let Some(model) = model_override {
+        if !model.trim().is_empty() {
+            return model.to_string();
+        }
+    }
+    std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "glm-4.7-flash:latest".to_string())
+}

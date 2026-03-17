@@ -1,6 +1,7 @@
 #[derive(Clone)]
 pub struct Agent {
     pub id: usize,
+    pub global_id: String,
     pub manager_id: usize,
     pub name: String,
     pub selected: bool,
@@ -12,15 +13,17 @@ pub struct Agent {
     pub num_predict: String,
     pub in_conversation: bool,
     pub conversation_topic: String,
+    pub conversation_topic_source: String,
     pub conversation_mode: String,
     pub conversation_partner_id: Option<usize>,
     pub conversation_active: bool,
 }
 
 impl Agent {
-    pub fn new(id: usize, manager_id: usize) -> Self {
+    pub fn new(id: usize, global_id: String, manager_id: usize) -> Self {
         Self {
             id,
+            global_id,
             manager_id,
             name: format!("Agent {}", id),
             selected: false,
@@ -32,6 +35,7 @@ impl Agent {
             num_predict: String::new(),
             in_conversation: false,
             conversation_topic: String::new(),
+            conversation_topic_source: "Own".to_string(),
             conversation_mode: "Shared".to_string(),
             conversation_partner_id: None,
             conversation_active: false,
@@ -42,6 +46,7 @@ impl Agent {
 #[derive(Clone)]
 pub struct Evaluator {
     pub id: usize,
+    pub global_id: String,
     pub manager_id: usize,
     pub name: String,
     pub analysis_mode: String,
@@ -52,9 +57,10 @@ pub struct Evaluator {
 }
 
 impl Evaluator {
-    pub fn new(id: usize, manager_id: usize) -> Self {
+    pub fn new(id: usize, global_id: String, manager_id: usize) -> Self {
         Self {
             id,
+            global_id,
             manager_id,
             name: format!("Evaluator {}", id),
             analysis_mode: String::new(),
@@ -69,6 +75,7 @@ impl Evaluator {
 #[derive(Clone)]
 pub struct Researcher {
     pub id: usize,
+    pub global_id: String,
     pub manager_id: usize,
     pub name: String,
     pub topic_mode: String,
@@ -79,9 +86,10 @@ pub struct Researcher {
 }
 
 impl Researcher {
-    pub fn new(id: usize, manager_id: usize) -> Self {
+    pub fn new(id: usize, global_id: String, manager_id: usize) -> Self {
         Self {
             id,
+            global_id,
             manager_id,
             name: format!("Researcher {}", id),
             topic_mode: String::new(),
@@ -96,13 +104,15 @@ impl Researcher {
 #[derive(Clone)]
 pub struct AgentManager {
     pub id: usize,
+    pub global_id: String,
     pub name: String,
 }
 
 impl AgentManager {
-    pub fn new(id: usize) -> Self {
+    pub fn new(id: usize, global_id: String) -> Self {
         Self {
             id,
+            global_id,
             name: format!("Agent Manager {}", id),
         }
     }
