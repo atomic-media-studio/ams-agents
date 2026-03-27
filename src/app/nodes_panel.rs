@@ -5,12 +5,57 @@ use crate::reproducibility::{
     now_rfc3339_utc, read_manifest, runs_root, write_manifest,
 };
 use eframe::egui;
+use egui_phosphor::regular;
 use rand::Rng;
 use egui_snarl::ui::{PinInfo, SnarlViewer};
 use egui_snarl::{InPin, InPinId, NodeId, OutPin, OutPinId, Snarl};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+
+/// Preset topic labels and short conversation prompts (ethical, discussion-oriented).
+const TOPIC_PRESETS: &[(&str, &str)] = &[
+    (
+        "European Politics",
+        "Discuss European Politics and provide a concise overview of the main issue in one or two sentences.",
+    ),
+    (
+        "Mental Health",
+        "Discuss Mental Health and provide one or two practical insights about the topic.",
+    ),
+    (
+        "Electronics",
+        "Discuss Electronics and summarize one or two important points about the selected subject.",
+    ),
+    (
+        "Climate & Environmental Justice",
+        "Discuss how climate policy can balance urgency with fairness across communities; give one or two measured points.",
+    ),
+    (
+        "Digital Privacy & Consent",
+        "Discuss informed consent and respect for users in how personal data is collected and used; stay concise and neutral.",
+    ),
+    (
+        "AI Ethics & Accountability",
+        "Discuss one ethical risk of automated decision-making (e.g. bias, transparency) and what accountability could mean in practice.",
+    ),
+    (
+        "Research Integrity",
+        "Discuss why reproducibility and honest reporting matter in science; one or two sentences, in a constructive tone.",
+    ),
+    (
+        "Healthcare Access & Equity",
+        "Discuss trade-offs in fair allocation of healthcare resources; remain respectful and avoid stigmatizing any group.",
+    ),
+    (
+        "Education & Inclusion",
+        "Discuss barriers some learners face and one principle for more inclusive education; keep it practical and brief.",
+    ),
+    (
+        "Civil Discourse & Democracy",
+        "Discuss how public disagreement can stay productive without demeaning others; one or two grounded suggestions.",
+    ),
+];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum AgentNodeKind {
@@ -224,8 +269,8 @@ impl NodeData {
                 global_id,
                 instruction_mode: "Assistant".to_string(),
                 instruction: "You are a helpful assistant. Answer clearly, stay concise, and focus on the user request.".to_string(),
-                analysis_mode: "European Politics".to_string(),
-                conversation_topic: "Discuss European Politics and provide a concise overview of the main issue in one or two sentences.".to_string(),
+                analysis_mode: TOPIC_PRESETS[0].0.to_string(),
+                conversation_topic: TOPIC_PRESETS[0].1.to_string(),
                 conversation_topic_source: "Own".to_string(),
                 manager_node: None,
                 topic_node: None,
@@ -295,8 +340,8 @@ impl NodeData {
             payload: NodePayload::Topic(NodeTopicData {
                 name: AgentNodeKind::Topic.label().to_string(),
                 global_id,
-                analysis_mode: "European Politics".to_string(),
-                topic: "Discuss European Politics and provide a concise overview of the main issue in one or two sentences.".to_string(),
+                analysis_mode: TOPIC_PRESETS[0].0.to_string(),
+                topic: TOPIC_PRESETS[0].1.to_string(),
             }),
         }
     }
@@ -434,72 +479,50 @@ impl SnarlViewer<NodeData> for BasicNodeViewer {
 
         match node_kind {
             AgentNodeKind::Manager => {
-                let (name, global_id) = match &snarl.get_node(node).unwrap().payload {
-                    NodePayload::Manager(m) => (m.name.clone(), m.global_id.clone()),
-                    _ => unreachable!("kind mismatch"),
-                };
-
-                let mut erase = false;
                 // Make manager node slightly wider than others.
-                ui.vertical(|ui| {
-                    ui.add_sized(
-                        [120.0, 6.0],
-                        egui::Separator::default().horizontal(),
-                    );
-                    ui.label(egui::RichText::new(name).strong().size(12.0));
-                    ui.add_sized(
-                        [120.0, 6.0],
-                        egui::Separator::default().horizontal(),
-                    );
-                    ui.small(format!("Global ID: {}", global_id));
-                    if ui.button("Erase").clicked() {
-                        erase = true;
-                    }
-                });
+                {
+                    let node_mut = snarl.get_node_mut(node).unwrap();
+                    let manager_data = match &mut node_mut.payload {
+                        NodePayload::Manager(m) => m,
+                        _ => unreachable!("kind mismatch"),
+                    };
+                    ui.vertical(|ui| {
 
-                if erase {
-                    snarl.remove_node(node);
+                        ui.horizontal(|ui| {
+                            ui.label("Name:");
+                            ui.add(egui::TextEdit::singleline(&mut manager_data.name));
+                        });
+
+                        ui.separator();
+                    });
                 }
             }
             AgentNodeKind::Worker => {
+                let mut managers: Vec<(NodeId, String)> = snarl
+                    .nodes_ids_data()
+                    .filter_map(|(id, n)| {
+                        if let NodePayload::Manager(m) = &n.value.payload {
+                            Some((id, m.name.clone()))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                managers.sort_by(|a, b| a.1.cmp(&b.1));
+
                 let my_manager_node = inputs
                     .get(0)
                     .and_then(|pin| pin.remotes.first())
                     .map(|out_pin_id| out_pin_id.node);
 
-                let my_topic_node = inputs
-                    .get(1)
-                    .and_then(|pin| pin.remotes.first())
-                    .map(|out_pin_id| out_pin_id.node);
-
-                let manager_name = my_manager_node
-                    .and_then(|mid| snarl.get_node(mid))
-                    .and_then(|nd| match &nd.payload {
-                        NodePayload::Manager(m) => Some(m.name.clone()),
-                        _ => None,
-                    })
-                    .unwrap_or_else(|| "Unassigned".to_string());
-
-                let inferred_topic = my_topic_node.and_then(|tid| snarl.get_node(tid)).and_then(
-                    |nd| match &nd.payload {
-                        NodePayload::Topic(t) => Some((t.analysis_mode.clone(), t.topic.clone())),
-                        _ => None,
-                    },
-                );
-
                 if let Some(node_mut) = snarl.get_node_mut(node) {
                     if let NodePayload::Worker(w) = &mut node_mut.payload {
                         w.manager_node = my_manager_node;
-                        w.topic_node = my_topic_node;
-                        if let Some((topic_analysis_mode, topic_text)) = inferred_topic.as_ref() {
-                            w.analysis_mode = topic_analysis_mode.clone();
-                            w.conversation_topic = topic_text.clone();
-                            w.conversation_topic_source = "Own".to_string();
-                        }
+                        w.topic_node = None;
                     }
                 }
 
-                let mut erase = false;
+                let mut pending_manager_pick: Option<Option<NodeId>> = None;
                 {
                     let node_mut = snarl.get_node_mut(node).unwrap();
                     let worker_data = match &mut node_mut.payload {
@@ -508,9 +531,38 @@ impl SnarlViewer<NodeData> for BasicNodeViewer {
                     };
 
                     ui.vertical(|ui| {
-                        ui.separator();
-                        AMSAgents::render_agent_worker_header(ui, &manager_name);
-                        ui.separator();
+                        ui.horizontal(|ui| {
+                            ui.label("Manager:");
+                            let selected_text = my_manager_node
+                                .and_then(|mid| {
+                                    managers
+                                        .iter()
+                                        .find(|(id, _)| *id == mid)
+                                        .map(|(_, n)| n.clone())
+                                })
+                                .unwrap_or_else(|| "Unassigned".to_string());
+                            egui::ComboBox::from_id_salt(ui.id().with(node.0).with("manager_pick"))
+                                .selected_text(selected_text)
+                                .show_ui(ui, |ui| {
+                                    if ui
+                                        .selectable_label(my_manager_node.is_none(), "Unassigned")
+                                        .clicked()
+                                    {
+                                        pending_manager_pick = Some(None);
+                                    }
+                                    for &(mgr_id, ref mgr_name) in &managers {
+                                        if ui
+                                            .selectable_label(
+                                                my_manager_node == Some(mgr_id),
+                                                mgr_name.as_str(),
+                                            )
+                                            .clicked()
+                                        {
+                                            pending_manager_pick = Some(Some(mgr_id));
+                                        }
+                                    }
+                                });
+                        });
 
                         ui.vertical(|ui| {
                             ui.spacing_mut().item_spacing = egui::Vec2::new(5.0, 2.0);
@@ -572,38 +624,32 @@ impl SnarlViewer<NodeData> for BasicNodeViewer {
 
                         ui.horizontal(|ui| {
                             ui.label("Topic:");
-                            if my_topic_node.is_some() {
-                                let preview = worker_data.conversation_topic.clone();
-                                let short = if preview.chars().count() > 20 {
-                                    format!(
-                                        "{}…",
-                                        preview.chars().take(17).collect::<String>()
-                                    )
-                                } else {
-                                    preview
-                                };
-                                ui.label(
-                                    egui::RichText::new(format!(
-                                        "{} — {}",
-                                        worker_data.analysis_mode, short
-                                    ))
-                                    .weak()
-                                    .size(11.0),
-                                );
+                            egui::ComboBox::from_id_salt(
+                                ui.id().with(node.0).with("worker_topic_analysis_mode"),
+                            )
+                            .selected_text(if worker_data.analysis_mode.is_empty() {
+                                "Select".to_string()
                             } else {
-                                ui.label(
-                                    egui::RichText::new("connect a Topic node (topic pin)")
-                                        .weak()
-                                        .size(11.0),
-                                );
-                            }
+                                worker_data.analysis_mode.clone()
+                            })
+                            .show_ui(ui, |ui| {
+                                for &(label, sentence) in TOPIC_PRESETS {
+                                    if ui
+                                        .selectable_label(worker_data.analysis_mode == label, label)
+                                        .clicked()
+                                    {
+                                        worker_data.analysis_mode = label.to_string();
+                                        worker_data.conversation_topic = sentence.to_string();
+                                    }
+                                }
+                            });
                         });
-
-                        ui.small(
-                            egui::RichText::new("Start/stop: use a Conversation node (wires A/B).")
-                                .weak()
-                                .size(10.0),
-                        );
+                        ui.horizontal(|ui| {
+                            ui.label("Topic:");
+                            ui.add(egui::TextEdit::singleline(
+                                &mut worker_data.conversation_topic,
+                            ));
+                        });
 
                         ui.separator();
                         ui.horizontal(|ui| {
@@ -613,18 +659,26 @@ impl SnarlViewer<NodeData> for BasicNodeViewer {
                                 println!("Manager node: {:?}", worker_data.manager_node);
                                 println!("Name: {}", worker_data.name);
                             }
-
-                            if ui.button("Erase").clicked() {
-                                erase = true;
-                            }
                         });
                         ui.separator();
-                        ui.small(format!("Global ID: {}", worker_data.global_id));
                     });
                 }
 
-                if erase {
-                    snarl.remove_node(node);
+                if let Some(pick) = pending_manager_pick {
+                    let in_pin = InPinId {
+                        node,
+                        input: 0,
+                    };
+                    snarl.drop_inputs(in_pin);
+                    if let Some(mgr_id) = pick {
+                        snarl.connect(
+                            OutPinId {
+                                node: mgr_id,
+                                output: 0,
+                            },
+                            in_pin,
+                        );
+                    }
                 }
             }
             AgentNodeKind::Conversation => {
@@ -698,7 +752,6 @@ impl SnarlViewer<NodeData> for BasicNodeViewer {
                     }
                 }
 
-                let mut erase = false;
                 {
                     let node_mut = snarl.get_node_mut(node).unwrap();
                     let conv = match &mut node_mut.payload {
@@ -708,7 +761,10 @@ impl SnarlViewer<NodeData> for BasicNodeViewer {
 
                     ui.vertical(|ui| {
                         ui.separator();
-                        ui.label(egui::RichText::new(&conv.name).strong().size(12.0));
+                        ui.horizontal(|ui| {
+                            ui.label("Name:");
+                            ui.add(egui::TextEdit::singleline(&mut conv.name));
+                        });
                         ui.separator();
 
                         ui.horizontal(|ui| {
@@ -749,9 +805,6 @@ impl SnarlViewer<NodeData> for BasicNodeViewer {
                             } else {
                                 egui::RichText::new("Status: Stopped").weak()
                             });
-                            if ui.button("Erase").clicked() {
-                                erase = true;
-                            }
                         });
 
                         if !can_start && !conv.conversation_active {
@@ -765,12 +818,7 @@ impl SnarlViewer<NodeData> for BasicNodeViewer {
                         }
 
                         ui.separator();
-                        ui.small(format!("Global ID: {}", conv.global_id));
                     });
-                }
-
-                if erase {
-                    snarl.remove_node(node);
                 }
             }
             AgentNodeKind::Evaluator => {
@@ -804,7 +852,6 @@ impl SnarlViewer<NodeData> for BasicNodeViewer {
                     }
                 }
 
-                let mut erase = false;
                 {
                     let node_mut = snarl.get_node_mut(node).unwrap();
                     let evaluator_data = match &mut node_mut.payload {
@@ -928,18 +975,9 @@ impl SnarlViewer<NodeData> for BasicNodeViewer {
                                         evaluator_data.name
                                     );
                                 }
-
-                                if ui.button("Erase").clicked() {
-                                    erase = true;
-                                }
                             });
                             ui.separator();
-                            ui.small(format!("Global ID: {}", evaluator_data.global_id));
                     });
-                }
-
-                if erase {
-                    snarl.remove_node(node);
                 }
             }
             AgentNodeKind::Researcher => {
@@ -972,7 +1010,6 @@ impl SnarlViewer<NodeData> for BasicNodeViewer {
                     }
                 }
 
-                let mut erase = false;
                 {
                     let node_mut = snarl.get_node_mut(node).unwrap();
                     let researcher_data = match &mut node_mut.payload {
@@ -1092,22 +1129,12 @@ impl SnarlViewer<NodeData> for BasicNodeViewer {
                                         researcher_data.name
                                     );
                                 }
-
-                                if ui.button("Erase").clicked() {
-                                    erase = true;
-                                }
                             });
                             ui.separator();
-                            ui.small(format!("Global ID: {}", researcher_data.global_id));
                     });
-                }
-
-                if erase {
-                    snarl.remove_node(node);
                 }
             }
             AgentNodeKind::Topic => {
-                let mut erase = false;
                 {
                     let node_mut = snarl.get_node_mut(node).unwrap();
                     let topic_data = match &mut node_mut.payload {
@@ -1117,11 +1144,10 @@ impl SnarlViewer<NodeData> for BasicNodeViewer {
 
                     ui.vertical(|ui| {
                         ui.separator();
-                        ui.label(
-                            egui::RichText::new(&topic_data.name)
-                                .strong()
-                                .size(12.0),
-                        );
+                        ui.horizontal(|ui| {
+                            ui.label("Name:");
+                            ui.add(egui::TextEdit::singleline(&mut topic_data.name));
+                        });
                         ui.separator();
 
                         // Topic preset + topic text (mirrors Agent Worker widgets).
@@ -1137,41 +1163,17 @@ impl SnarlViewer<NodeData> for BasicNodeViewer {
                                     topic_data.analysis_mode.clone()
                                 })
                                 .show_ui(ui, |ui| {
-                                    if ui
-                                        .selectable_label(
-                                            topic_data.analysis_mode
-                                                == "European Politics",
-                                            "European Politics",
-                                        )
-                                        .clicked()
-                                    {
-                                        topic_data.analysis_mode =
-                                            "European Politics".to_string();
-                                        topic_data.topic = "Discuss European Politics and provide a concise overview of the main issue in one or two sentences.".to_string();
-                                    }
-                                    if ui
-                                        .selectable_label(
-                                            topic_data.analysis_mode
-                                                == "Mental Health",
-                                            "Mental Health",
-                                        )
-                                        .clicked()
-                                    {
-                                        topic_data.analysis_mode =
-                                            "Mental Health".to_string();
-                                        topic_data.topic = "Discuss Mental Health and provide one or two practical insights about the topic.".to_string();
-                                    }
-                                    if ui
-                                        .selectable_label(
-                                            topic_data.analysis_mode
-                                                == "Electronics",
-                                            "Electronics",
-                                        )
-                                        .clicked()
-                                    {
-                                        topic_data.analysis_mode =
-                                            "Electronics".to_string();
-                                        topic_data.topic = "Discuss Electronics and summarize one or two important points about the selected subject.".to_string();
+                                    for &(label, sentence) in TOPIC_PRESETS {
+                                        if ui
+                                            .selectable_label(
+                                                topic_data.analysis_mode == label,
+                                                label,
+                                            )
+                                            .clicked()
+                                        {
+                                            topic_data.analysis_mode = label.to_string();
+                                            topic_data.topic = sentence.to_string();
+                                        }
                                     }
                                 });
                             });
@@ -1185,16 +1187,7 @@ impl SnarlViewer<NodeData> for BasicNodeViewer {
                         });
 
                         ui.separator();
-                        if ui.button("Erase").clicked() {
-                            erase = true;
-                        }
-                        ui.separator();
-                        ui.small(format!("Global ID: {}", topic_data.global_id));
                     });
-                }
-
-                if erase {
-                    snarl.remove_node(node);
                 }
             }
         }
@@ -1919,7 +1912,6 @@ impl AMSAgents {
                                     AgentNodeKind::Worker,
                                     AgentNodeKind::Evaluator,
                                     AgentNodeKind::Researcher,
-                                    AgentNodeKind::Topic,
                                     AgentNodeKind::Conversation,
                                 ] {
                                     ui.selectable_value(
@@ -1961,6 +1953,7 @@ impl AMSAgents {
                         .collect();
 
                     egui::ScrollArea::vertical().show(ui, |ui| {
+                        let mut row_remove: Vec<NodeId> = Vec::new();
                         for node_id in node_ids {
                             let Some(node) = self.nodes_panel.snarl.get_node(node_id) else {
                                 continue;
@@ -1973,7 +1966,7 @@ impl AMSAgents {
                                 NodePayload::Researcher(r) => r.global_id.as_str(),
                                 NodePayload::Topic(t) => t.global_id.as_str(),
                             };
-                            let header = format!("{}  •  {}", node.label, global_id);
+                            let row_label = node.label.clone();
                             let kind = node.kind;
                             let inputs: Vec<InPin> = (0..kind.inputs())
                                 .map(|input| {
@@ -1993,20 +1986,52 @@ impl AMSAgents {
                                 .collect();
 
                             ui.set_width(ui.available_width());
-                            egui::CollapsingHeader::new(header)
-                                .id_salt(("agent_row", node_id.0))
-                                .show(ui, |ui| {
-                                    ui.add_enabled_ui(!self.read_only_replay_mode, |ui| {
-                                        viewer.show_body(
-                                            node_id,
-                                            &inputs,
-                                            &outputs,
-                                            ui,
-                                            &mut self.nodes_panel.snarl,
-                                        );
-                                    });
+                            let row_state_id = ui.make_persistent_id(("agent_row", node_id.0));
+                            let header_close = egui::collapsing_header::CollapsingState::load_with_default_open(
+                                ui.ctx(),
+                                row_state_id,
+                                true,
+                            )
+                            .show_header(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    ui.spacing_mut().item_spacing.x = 6.0;
+                                    ui.label(&row_label);
+                                    ui.label("•");
+                                    ui.label(global_id);
+                                    ui.label("•");
+                                    if !self.read_only_replay_mode {
+                                        let x_btn = egui::Button::new(
+                                            egui::RichText::new(regular::X)
+                                                .line_height(Some(ui.text_style_height(&egui::TextStyle::Body))),
+                                        )
+                                        .frame(false)
+                                        .min_size(egui::Vec2::ZERO)
+                                        .small();
+                                        if ui
+                                            .add(x_btn)
+                                            .on_hover_text("Remove")
+                                            .clicked()
+                                        {
+                                            row_remove.push(node_id);
+                                        }
+                                    }
                                 });
+                            });
+                            let _ = header_close.body(|ui| {
+                                ui.add_enabled_ui(!self.read_only_replay_mode, |ui| {
+                                    viewer.show_body(
+                                        node_id,
+                                        &inputs,
+                                        &outputs,
+                                        ui,
+                                        &mut self.nodes_panel.snarl,
+                                    );
+                                });
+                            });
                             ui.add_space(4.0);
+                        }
+                        for id in row_remove {
+                            self.nodes_panel.snarl.remove_node(id);
                         }
                     });
                 });

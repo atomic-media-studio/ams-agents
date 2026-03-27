@@ -6,7 +6,6 @@ use crate::reproducibility::{RunContext, RunManifest};
 
 mod settings_panel;
 mod nodes_panel;
-mod agent_worker_node;
 mod agent_evaluator_node;
 mod agent_researcher_node;
 
@@ -38,6 +37,7 @@ pub struct AMSAgents {
     manifest_status_message: String,
     read_only_replay_mode: bool,
     theme_applied: bool,
+    phosphor_fonts_installed: bool,
     nodes_panel: nodes_panel::NodesPanelState,
 }
 
@@ -72,6 +72,7 @@ impl AMSAgents {
             manifest_status_message: String::new(),
             read_only_replay_mode: false,
             theme_applied: false,
+            phosphor_fonts_installed: false,
             nodes_panel: nodes_panel::NodesPanelState::default(),
         }
     }
@@ -82,6 +83,12 @@ impl eframe::App for AMSAgents {
         if !self.theme_applied {
             catppuccin_egui::set_theme(ctx, catppuccin_egui::LATTE);
             self.theme_applied = true;
+        }
+        if !self.phosphor_fonts_installed {
+            let mut fonts = ctx.fonts(|f| f.definitions().clone());
+            egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
+            ctx.set_fonts(fonts);
+            self.phosphor_fonts_installed = true;
         }
         // Auto-refresh model list on startup
         if self.ollama_models.lock().unwrap().is_empty() && !*self.ollama_models_loading.lock().unwrap() {
