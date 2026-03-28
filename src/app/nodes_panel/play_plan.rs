@@ -71,13 +71,16 @@ pub(super) fn build_conversation_sidecar_from_agents(
                 });
             }
             NodePayload::Researcher(res) if res.active => {
-                researchers.push(SidecarResearcher {
-                    global_id: res.global_id.clone(),
-                    topic_mode: res.topic_mode.clone(),
-                    instruction: res.instruction.clone(),
-                    limit_token: res.limit_token,
-                    num_predict: res.num_predict.clone(),
-                });
+                if let Some(target_worker_id) = res.worker_node {
+                    researchers.push(SidecarResearcher {
+                        global_id: res.global_id.clone(),
+                        topic_mode: res.topic_mode.clone(),
+                        instruction: res.instruction.clone(),
+                        limit_token: res.limit_token,
+                        num_predict: res.num_predict.clone(),
+                        target_worker_id,
+                    });
+                }
             }
             _ => {}
         }
