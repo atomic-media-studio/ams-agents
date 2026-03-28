@@ -1,6 +1,7 @@
 use crate::adk_integration::OllamaStopEpoch;
 use crate::http_client::{send_evaluator_result, send_researcher_result};
 use crate::reproducibility::RunContext;
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::time::{Duration, sleep};
 
@@ -64,6 +65,7 @@ fn evaluator_sentiment(analysis_mode: &str, response: &str) -> &'static str {
 pub async fn run_sidecars_for_message(
     sidecars: &ConversationSidecarConfig,
     agent_message: &str,
+    ollama_host: &str,
     endpoint: &str,
     run_context: Option<&RunContext>,
     selected_model: Option<&str>,
@@ -72,6 +74,7 @@ pub async fn run_sidecars_for_message(
 ) -> Result<(), ()> {
     for ev in &sidecars.evaluators {
         match crate::adk_integration::send_to_ollama(
+            ollama_host,
             &ev.instruction,
             agent_message,
             ev.limit_token,
@@ -118,6 +121,7 @@ pub async fn run_sidecars_for_message(
             topic.to_lowercase()
         );
         match crate::adk_integration::send_to_ollama(
+            ollama_host,
             &instruction,
             agent_message,
             rs.limit_token,
@@ -236,6 +240,7 @@ pub async fn start_conversation_loop(
     agent_b_instruction: String,
     agent_b_topic: String,
     agent_b_topic_source: String,
+    ollama_host: String,
     endpoint: String,
     active_flag: Arc<Mutex<bool>>,
     last_message_in_chat: Arc<Mutex<Option<String>>>,
@@ -244,6 +249,10 @@ pub async fn start_conversation_loop(
     history_size: usize,
     turn_delay_secs: u64,
     run_context: Option<RunContext>,
+    run_generation: u64,
+    run_generation_counter: Arc<AtomicU64>,
+    loops_remaining_in_run: Arc<AtomicUsize>,
+    conversation_graph_running: Arc<AtomicBool>,
 ) {
     let mut turn = 0;
     let mut is_agent_a_turn = true;
@@ -265,26 +274,21 @@ pub async fn start_conversation_loop(
     );
     println!("\n{}", start_message);
 
-    // Send to chat app
-    let endpoint_clone = endpoint.clone();
-    let topic_clone = topics_summary.clone();
-    let run_context_for_start = run_context.clone();
-    tokio::spawn(async move {
-        if let Err(e) = crate::http_client::send_conversation_message(
-            &endpoint_clone,
-            0, // System message ID
-            "Agent Manager",
-            0,
-            "System",
-            &topic_clone,
-            &start_message,
-            run_context_for_start.as_ref(),
-        )
-        .await
-        {
-            eprintln!("[HTTP] Failed to send conversation start message: {}", e);
-        }
-    });
+    // Send to chat app (await so later lines follow this in order).
+    if let Err(e) = crate::http_client::send_conversation_message(
+        &endpoint,
+        0,
+        "Agent Manager",
+        0,
+        "System",
+        &topics_summary,
+        &start_message,
+        run_context.as_ref(),
+    )
+    .await
+    {
+        eprintln!("[HTTP] Failed to send conversation start message: {}", e);
+    }
 
     loop {
         // Check if conversation is still active
@@ -375,6 +379,7 @@ pub async fn start_conversation_loop(
 
         // Send message to Ollama
         match crate::adk_integration::send_to_ollama_with_context(
+            ollama_host.as_str(),
             &enhanced_instruction,
             &conversation_context,
             false,
@@ -399,32 +404,27 @@ pub async fn start_conversation_loop(
                 println!("\n[{}]: {}", sender_name, response);
                 println!();
 
-                // Agent line to chat first; then sidecars so evaluator/researcher follow in order.
-                let response_for_http = response.clone();
-                let endpoint_clone = endpoint.clone();
-                let topic_clone = effective_topic.clone();
-                let run_context_for_message = run_context.clone();
-                tokio::spawn(async move {
-                    if let Err(e) = crate::http_client::send_conversation_message(
-                        &endpoint_clone,
-                        sender_id,
-                        &sender_name,
-                        receiver_id,
-                        &receiver_name,
-                        &topic_clone,
-                        &response_for_http,
-                        run_context_for_message.as_ref(),
-                    )
-                    .await
-                    {
-                        eprintln!("[HTTP] Failed to send message: {}", e);
-                    }
-                });
+                // Agent line to chat before sidecars so chat order matches dialogue flow.
+                if let Err(e) = crate::http_client::send_conversation_message(
+                    &endpoint,
+                    sender_id,
+                    &sender_name,
+                    receiver_id,
+                    &receiver_name,
+                    &effective_topic,
+                    &response,
+                    run_context.as_ref(),
+                )
+                .await
+                {
+                    eprintln!("[HTTP] Failed to send message: {}", e);
+                }
 
                 // Evaluators / researchers: must finish before the next dialogue Ollama call.
                 if run_sidecars_for_message(
                     sidecars.as_ref(),
                     &response,
+                    ollama_host.as_str(),
                     &endpoint,
                     run_context.as_ref(),
                     selected_model.as_deref(),
@@ -468,24 +468,24 @@ pub async fn start_conversation_loop(
     );
     println!("\n{}", end_message);
 
-    // Send to chat app
-    let endpoint_clone = endpoint.clone();
-    let topic_clone = topics_summary;
-    let run_context_for_end = run_context;
-    tokio::spawn(async move {
-        if let Err(e) = crate::http_client::send_conversation_message(
-            &endpoint_clone,
-            0, // System message ID
-            "Agent Manager",
-            0,
-            "System",
-            &topic_clone,
-            &end_message,
-            run_context_for_end.as_ref(),
-        )
-        .await
-        {
-            eprintln!("[HTTP] Failed to send conversation end message: {}", e);
-        }
-    });
+    // End line after all turns and their sidecars; await so nothing is still in flight here.
+    if let Err(e) = crate::http_client::send_conversation_message(
+        &endpoint,
+        0,
+        "Agent Manager",
+        0,
+        "System",
+        &topics_summary,
+        &end_message,
+        run_context.as_ref(),
+    )
+    .await
+    {
+        eprintln!("[HTTP] Failed to send conversation end message: {}", e);
+    }
+
+    let prev_remaining = loops_remaining_in_run.fetch_sub(1, Ordering::SeqCst);
+    if prev_remaining == 1 && run_generation_counter.load(Ordering::SeqCst) == run_generation {
+        conversation_graph_running.store(false, Ordering::Release);
+    }
 }

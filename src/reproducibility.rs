@@ -19,10 +19,16 @@ pub struct RunContext {
     pub run_id: String,
 }
 
+fn default_ollama_host() -> String {
+    "http://127.0.0.1:11434".to_string()
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RunRuntimeSettings {
     pub selected_model: Option<String>,
     pub http_endpoint: String,
+    #[serde(default = "default_ollama_host")]
+    pub ollama_host: String,
     pub turn_delay_secs: u64,
     pub history_size: usize,
     pub read_only_replay: bool,

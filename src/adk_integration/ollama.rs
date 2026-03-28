@@ -24,14 +24,27 @@ struct OllamaTagModel {
     name: String,
 }
 
+pub(crate) fn normalize_ollama_host(input: &str) -> String {
+    let s = input.trim();
+    if s.is_empty() {
+        return "http://127.0.0.1:11434".to_string();
+    }
+    let s = s.trim_end_matches('/').to_string();
+    if s.contains("://") {
+        s
+    } else {
+        format!("http://{}", s)
+    }
+}
+
 pub(crate) struct RunnerContext {
     pub(crate) runner: Runner,
     pub(crate) session_id: String,
 }
 
-pub(crate) async fn fetch_models() -> Result<Vec<String>> {
+pub(crate) async fn fetch_models(ollama_host: &str) -> Result<Vec<String>> {
     let url = std::env::var("OLLAMA_TAGS_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:11434/api/tags".to_string());
+        .unwrap_or_else(|_| format!("{}/api/tags", normalize_ollama_host(ollama_host)));
     let client = reqwest::Client::new();
     let response = client.get(url).send().await?.error_for_status()?;
     let tags = response.json::<OllamaTagsResponse>().await?;
@@ -42,13 +55,15 @@ pub(crate) async fn fetch_models() -> Result<Vec<String>> {
 }
 
 pub(crate) async fn build_runner_context(
+    ollama_host: &str,
     instruction: &str,
     limit_token: bool,
     num_predict: &str,
     model_override: Option<&str>,
 ) -> Result<RunnerContext> {
     let model_name = resolve_model_name(model_override);
-    let mut config = OllamaConfig::new(&model_name);
+    let host = normalize_ollama_host(ollama_host);
+    let mut config = OllamaConfig::with_host(host, &model_name);
     if limit_token {
         if let Ok(num) = num_predict.parse::<u32>() {
             config.num_ctx = Some(num);

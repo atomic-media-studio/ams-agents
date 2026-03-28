@@ -9,102 +9,126 @@ impl AMSAgents {
         ctx: &egui::Context,
     ) {
         ui.vertical(|ui| {
-            let total_agents_count = self.managers.len()
-                + self.agents.len()
-                + self.evaluators.len()
-                + self.researchers.len();
-            ui.label(egui::RichText::new("AMSAgents").strong().size(12.0));
-            ui.label(format!("Total: {}", total_agents_count));
-            ui.separator();
+            let settings_fold = egui::collapsing_header::CollapsingState::load_with_default_open(
+                ui.ctx(),
+                ui.make_persistent_id("ollama_section_settings"),
+                true,
+            )
+            .show_header(ui, |ui| {
+                ui.label(egui::RichText::new("Settings Ollama").strong());
+            });
+            let _ = settings_fold.body(|ui| {
+                ui.horizontal(|ui| {
+                    ui.label("API host / URL:");
+                    ui.add(egui::TextEdit::singleline(&mut self.ollama_host).desired_width(300.0));
+                });
+            });
 
-            ui.horizontal(|ui| {
-                ui.label("Ollama Model:");
-                let models = self.ollama_models.lock().unwrap().clone();
-                if self.selected_ollama_model.is_empty() {
-                    if let Some(first) = models.first() {
-                        self.selected_ollama_model = first.clone();
+            let test_fold = egui::collapsing_header::CollapsingState::load_with_default_open(
+                ui.ctx(),
+                ui.make_persistent_id("ollama_section_test"),
+                true,
+            )
+            .show_header(ui, |ui| {
+                ui.label(egui::RichText::new("Test Ollama").strong());
+            });
+            let _ = test_fold.body(|ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Ollama Model:");
+                    let models = self.ollama_models.lock().unwrap().clone();
+                    if self.selected_ollama_model.is_empty() {
+                        if let Some(first) = models.first() {
+                            self.selected_ollama_model = first.clone();
+                        }
                     }
-                }
-                egui::ComboBox::from_id_salt("ollama_model_selector")
-                    .selected_text(if self.selected_ollama_model.is_empty() {
-                        "Select model".to_string()
-                    } else {
-                        self.selected_ollama_model.clone()
-                    })
-                    .show_ui(ui, |ui| {
-                        for model in &models {
-                            ui.selectable_value(
-                                &mut self.selected_ollama_model,
-                                model.clone(),
-                                model,
-                            );
-                        }
-                    });
-
-                let loading = *self.ollama_models_loading.lock().unwrap();
-                if ui
-                    .button(if loading { "Loading" } else { "Refresh" })
-                    .clicked()
-                    && !loading
-                {
-                    *self.ollama_models_loading.lock().unwrap() = true;
-                    let models_arc = self.ollama_models.clone();
-                    let loading_arc = self.ollama_models_loading.clone();
-                    let ctx = ctx.clone();
-                    let handle = self.rt_handle.clone();
-                    handle.spawn(async move {
-                        let models = crate::adk_integration::fetch_ollama_models()
-                            .await
-                            .unwrap_or_default();
-                        *models_arc.lock().unwrap() = models;
-                        *loading_arc.lock().unwrap() = false;
-                        ctx.request_repaint();
-                    });
-                }
-            });
-            ui.add_space(5.0);
-
-            ui.horizontal(|ui| {
-                ui.label("Chat HTTP Endpoint:");
-                ui.add(egui::TextEdit::singleline(&mut self.http_endpoint).desired_width(260.0));
-            });
-            ui.add_space(5.0);
-
-            ui.horizontal(|ui| {
-                if ui.button("Test API").clicked() {
-                    println!("Pinging Ollama");
-                    let ctx = ctx.clone();
-                    let handle = self.rt_handle.clone();
-                    let model = self.selected_ollama_model.clone();
-                    handle.spawn(async move {
-                        match crate::adk_integration::test_ollama(if model.trim().is_empty() {
-                            None
+                    egui::ComboBox::from_id_salt("ollama_model_selector")
+                        .selected_text(if self.selected_ollama_model.is_empty() {
+                            "Select model".to_string()
                         } else {
-                            Some(model.as_str())
+                            self.selected_ollama_model.clone()
                         })
-                        .await
-                        {
-                            Ok(_) => {}
-                            Err(e) => eprintln!("Ollama error: {}", e),
-                        }
-                        ctx.request_repaint();
-                    });
-                }
-            });
-            ui.add_space(5.0);
-            ui.horizontal(|ui| {
-                ui.label("Turn Delay (s):");
-                ui.add(
-                    egui::DragValue::new(&mut self.conversation_turn_delay_secs)
-                        .range(0..=60)
-                        .speed(0.1),
-                );
-                ui.label("History:");
-                ui.add(
-                    egui::DragValue::new(&mut self.conversation_history_size)
-                        .range(1..=50)
-                        .speed(0.1),
-                );
+                        .show_ui(ui, |ui| {
+                            for model in &models {
+                                ui.selectable_value(
+                                    &mut self.selected_ollama_model,
+                                    model.clone(),
+                                    model,
+                                );
+                            }
+                        });
+
+                    let loading = *self.ollama_models_loading.lock().unwrap();
+                    if ui
+                        .button(if loading { "Loading" } else { "Refresh" })
+                        .clicked()
+                        && !loading
+                    {
+                        *self.ollama_models_loading.lock().unwrap() = true;
+                        let models_arc = self.ollama_models.clone();
+                        let loading_arc = self.ollama_models_loading.clone();
+                        let ctx = ctx.clone();
+                        let handle = self.rt_handle.clone();
+                        let ollama_host = self.ollama_host.clone();
+                        handle.spawn(async move {
+                            let models = crate::adk_integration::fetch_ollama_models(&ollama_host)
+                                .await
+                                .unwrap_or_default();
+                            *models_arc.lock().unwrap() = models;
+                            *loading_arc.lock().unwrap() = false;
+                            ctx.request_repaint();
+                        });
+                    }
+                });
+                ui.add_space(5.0);
+
+                ui.horizontal(|ui| {
+                    ui.label("Chat HTTP Endpoint:");
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.http_endpoint).desired_width(260.0),
+                    );
+                });
+                ui.add_space(5.0);
+
+                ui.horizontal(|ui| {
+                    if ui.button("Test API").clicked() {
+                        println!("Pinging Ollama");
+                        let ctx = ctx.clone();
+                        let handle = self.rt_handle.clone();
+                        let model = self.selected_ollama_model.clone();
+                        let ollama_host = self.ollama_host.clone();
+                        handle.spawn(async move {
+                            match crate::adk_integration::test_ollama(
+                                ollama_host.as_str(),
+                                if model.trim().is_empty() {
+                                    None
+                                } else {
+                                    Some(model.as_str())
+                                },
+                            )
+                            .await
+                            {
+                                Ok(_) => {}
+                                Err(e) => eprintln!("Ollama error: {}", e),
+                            }
+                            ctx.request_repaint();
+                        });
+                    }
+                });
+                ui.add_space(5.0);
+                ui.horizontal(|ui| {
+                    ui.label("Turn Delay (s):");
+                    ui.add(
+                        egui::DragValue::new(&mut self.conversation_turn_delay_secs)
+                            .range(0..=60)
+                            .speed(0.1),
+                    );
+                    ui.label("History:");
+                    ui.add(
+                        egui::DragValue::new(&mut self.conversation_history_size)
+                            .range(1..=50)
+                            .speed(0.1),
+                    );
+                });
             });
         });
     }

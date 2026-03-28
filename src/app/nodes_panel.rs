@@ -8,7 +8,7 @@ use eframe::egui;
 use egui_phosphor::regular;
 use rand::Rng;
 use std::path::PathBuf;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 /// Preset topic labels and short conversation prompts (ethical, discussion-oriented).
@@ -1262,6 +1262,7 @@ impl AMSAgents {
         RunRuntimeSettings {
             selected_model: self.selected_model_option(),
             http_endpoint: self.http_endpoint.clone(),
+            ollama_host: self.ollama_host.clone(),
             turn_delay_secs: self.conversation_turn_delay_secs,
             history_size: self.conversation_history_size,
             read_only_replay: self.read_only_replay_mode,
@@ -1592,6 +1593,7 @@ impl AMSAgents {
 
         self.selected_ollama_model = manifest.runtime.selected_model.clone().unwrap_or_default();
         self.http_endpoint = manifest.runtime.http_endpoint.clone();
+        self.ollama_host = manifest.runtime.ollama_host.clone();
         self.conversation_turn_delay_secs = manifest.runtime.turn_delay_secs;
         self.conversation_history_size = manifest.runtime.history_size;
 
@@ -1618,7 +1620,20 @@ impl AMSAgents {
             *flag.lock().unwrap() = false;
         }
         self.conversation_loop_handles.clear();
-        self.conversation_graph_running = false;
+        self.conversation_graph_running
+            .store(false, Ordering::Release);
+        *self.last_message_in_chat.lock().unwrap() = None;
+        self.conversation_message_events.lock().unwrap().clear();
+        self.evaluator_event_queues.lock().unwrap().clear();
+        self.researcher_event_queues.lock().unwrap().clear();
+        self.last_evaluated_message_by_evaluator
+            .lock()
+            .unwrap()
+            .clear();
+        self.last_researched_message_by_researcher
+            .lock()
+            .unwrap()
+            .clear();
     }
 
     /// Returns `true` if the manifest was saved and conversation loops were (re)scheduled.
@@ -1695,6 +1710,23 @@ impl AMSAgents {
             .collect();
         eligible.sort_by_key(|w| w.id);
 
+        if eligible.is_empty() {
+            let play_plan = collect_run_play_plan_from_agents(&self.nodes_panel.agents, vec![]);
+            match serde_json::to_string_pretty(&play_plan) {
+                Ok(json) => println!("[Run Graph] play plan:\n{}", json),
+                Err(e) => eprintln!("[Run Graph] failed to serialize play plan: {e}"),
+            }
+            return true;
+        }
+
+        let n_conversation_loops = (eligible.len() + 1) / 2;
+        self.conversation_run_generation
+            .fetch_add(1, Ordering::SeqCst);
+        let run_generation = self.conversation_run_generation.load(Ordering::SeqCst);
+        let loops_remaining = Arc::new(AtomicUsize::new(n_conversation_loops));
+        let gen_counter = self.conversation_run_generation.clone();
+        let graph_running_flag = self.conversation_graph_running.clone();
+
         let mut conversations_plan = Vec::new();
         let mut i = 0;
         while i < eligible.len() {
@@ -1747,6 +1779,10 @@ impl AMSAgents {
                 });
                 self.start_conversation_from_node_worker_resolved(
                     sidecars.clone(),
+                    run_generation,
+                    gen_counter.clone(),
+                    loops_remaining.clone(),
+                    graph_running_flag.clone(),
                     a.id,
                     a.id,
                     a.name.clone(),
@@ -1795,6 +1831,10 @@ impl AMSAgents {
                 });
                 self.start_conversation_from_node_worker_resolved(
                     sidecars.clone(),
+                    run_generation,
+                    gen_counter.clone(),
+                    loops_remaining.clone(),
+                    graph_running_flag.clone(),
                     a.id,
                     a.id,
                     a.name.clone(),
@@ -1818,7 +1858,8 @@ impl AMSAgents {
             Err(e) => eprintln!("[Run Graph] failed to serialize play plan: {e}"),
         }
 
-        self.conversation_graph_running = true;
+        self.conversation_graph_running
+            .store(true, Ordering::Release);
         true
     }
 
@@ -1826,6 +1867,10 @@ impl AMSAgents {
     fn start_conversation_from_node_worker_resolved(
         &mut self,
         sidecars: Arc<crate::agent_conversation_loop::ConversationSidecarConfig>,
+        run_generation: u64,
+        run_generation_counter: Arc<AtomicU64>,
+        loops_remaining_in_run: Arc<AtomicUsize>,
+        conversation_graph_running_flag: Arc<AtomicBool>,
         loop_key_node_id: usize,
         agent_a_node_id: usize,
         agent_a_name: String,
@@ -1842,6 +1887,7 @@ impl AMSAgents {
         let active_flag = Arc::new(Mutex::new(true));
         let flag_clone = active_flag.clone();
         let endpoint = self.http_endpoint.clone();
+        let ollama_host = self.ollama_host.clone();
         let last_msg = self.last_message_in_chat.clone();
         let message_events = self.conversation_message_events.clone();
         let selected_model = if self.selected_ollama_model.trim().is_empty() {
@@ -1873,6 +1919,7 @@ impl AMSAgents {
                 agent_b_instruction,
                 agent_b_topic,
                 agent_b_topic_source,
+                ollama_host,
                 endpoint,
                 flag_clone,
                 last_msg,
@@ -1881,6 +1928,10 @@ impl AMSAgents {
                 history_size,
                 turn_delay_secs,
                 run_context,
+                run_generation,
+                run_generation_counter,
+                loops_remaining_in_run,
+                conversation_graph_running_flag,
             )
             .await;
         });
@@ -1998,7 +2049,10 @@ impl AMSAgents {
                         }
                         ui.add_space(6.0);
                         let (start_stop_label, start_stop_hover) =
-                            if self.conversation_graph_running {
+                            if self
+                                .conversation_graph_running
+                                .load(Ordering::Acquire)
+                            {
                                 (
                                     "Stop",
                                     "Stop conversation loops and agent streaming to the chat endpoint.",
@@ -2017,7 +2071,10 @@ impl AMSAgents {
                             .on_hover_text(start_stop_hover)
                             .clicked()
                         {
-                            if self.conversation_graph_running {
+                            if self
+                                .conversation_graph_running
+                                .load(Ordering::Acquire)
+                            {
                                 self.stop_graph();
                             } else {
                                 let _ = self.run_graph();
@@ -2105,7 +2162,10 @@ impl AMSAgents {
                     let mut q = self.conversation_message_events.lock().unwrap();
                     std::mem::take(&mut *q)
                 };
-                if !self.conversation_graph_running {
+                if !self
+                    .conversation_graph_running
+                    .load(Ordering::Acquire)
+                {
                     // Backward-compatible fallback if queue is empty but latest still has a message.
                     if pending_events.is_empty() {
                         if let Some(last_msg) = self.last_message_in_chat.lock().unwrap().clone()
@@ -2225,6 +2285,7 @@ impl AMSAgents {
                         let limit_token = e.limit_token;
                         let num_predict = e.num_predict.clone();
                         let endpoint = self.http_endpoint.clone();
+                        let ollama_host = self.ollama_host.clone();
                         let has_output_nodes = has_output_nodes;
                         let run_context = self.current_run_context.clone();
                         let ctx = ctx.clone();
@@ -2238,6 +2299,7 @@ impl AMSAgents {
                         let epoch_caught = self.ollama_run_epoch.load(Ordering::SeqCst);
                         handle.spawn(async move {
                             match crate::adk_integration::send_to_ollama(
+                                ollama_host.as_str(),
                                 &instruction,
                                 &message,
                                 limit_token,
@@ -2348,6 +2410,7 @@ impl AMSAgents {
                         let limit_token = r.limit_token;
                         let num_predict = r.num_predict.clone();
                         let endpoint = self.http_endpoint.clone();
+                        let ollama_host = self.ollama_host.clone();
                         let has_output_nodes = has_output_nodes;
                         let run_context = self.current_run_context.clone();
                         let ctx = ctx.clone();
@@ -2361,6 +2424,7 @@ impl AMSAgents {
                         let epoch_caught = self.ollama_run_epoch.load(Ordering::SeqCst);
                         handle.spawn(async move {
                             match crate::adk_integration::send_to_ollama(
+                                ollama_host.as_str(),
                                 &instruction,
                                 &message,
                                 limit_token,
