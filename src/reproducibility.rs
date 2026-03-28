@@ -29,7 +29,6 @@ pub struct RunRuntimeSettings {
     pub http_endpoint: String,
     #[serde(default = "default_ollama_host")]
     pub ollama_host: String,
-    pub turn_delay_secs: u64,
     pub history_size: usize,
     pub read_only_replay: bool,
 }

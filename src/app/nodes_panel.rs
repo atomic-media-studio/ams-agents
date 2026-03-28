@@ -1266,7 +1266,6 @@ impl AMSAgents {
             selected_model: self.selected_model_option(),
             http_endpoint: self.http_endpoint.clone(),
             ollama_host: self.ollama_host.clone(),
-            turn_delay_secs: self.conversation_turn_delay_secs,
             history_size: self.conversation_history_size,
             read_only_replay: self.read_only_replay_mode,
         }
@@ -1597,7 +1596,6 @@ impl AMSAgents {
         self.selected_ollama_model = manifest.runtime.selected_model.clone().unwrap_or_default();
         self.http_endpoint = manifest.runtime.http_endpoint.clone();
         self.ollama_host = manifest.runtime.ollama_host.clone();
-        self.conversation_turn_delay_secs = manifest.runtime.turn_delay_secs;
         self.conversation_history_size = manifest.runtime.history_size;
 
         Ok(())
@@ -1971,7 +1969,6 @@ impl AMSAgents {
             Some(self.selected_ollama_model.clone())
         };
         let history_size = self.conversation_history_size;
-        let turn_delay_secs = self.conversation_turn_delay_secs;
         let handle = self.rt_handle.clone();
         let run_context = self.current_run_context.clone();
         let message_event_source_id = loop_key_node_id;
@@ -2031,7 +2028,6 @@ impl AMSAgents {
                 message_events,
                 selected_model,
                 history_size,
-                turn_delay_secs,
                 run_context,
                 run_generation,
                 run_generation_counter,

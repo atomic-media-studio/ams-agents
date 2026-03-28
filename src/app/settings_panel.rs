@@ -2,6 +2,9 @@ use super::AMSAgents;
 use eframe::egui;
 use std::path::PathBuf;
 
+/// Preset values for how many recent agent messages are included in the next dialogue prompt.
+const CHAT_HISTORY_PRESETS: &[usize] = &[1, 2, 3, 5, 8, 10, 15, 20, 30, 50];
+
 impl AMSAgents {
     pub(super) fn render_ollama_settings_widgets(
         &mut self,
@@ -22,6 +25,45 @@ impl AMSAgents {
                     ui.label("API host / URL:");
                     ui.add(egui::TextEdit::singleline(&mut self.ollama_host).desired_width(300.0));
                 });
+            });
+
+            let chat_fold = egui::collapsing_header::CollapsingState::load_with_default_open(
+                ui.ctx(),
+                ui.make_persistent_id("ollama_section_chat"),
+                true,
+            )
+            .show_header(ui, |ui| {
+                ui.label(egui::RichText::new("Chat Settings").strong());
+            });
+            let _ = chat_fold.body(|ui| {
+                let mut choices: Vec<usize> = CHAT_HISTORY_PRESETS.to_vec();
+                if !choices.contains(&self.conversation_history_size) {
+                    choices.push(self.conversation_history_size);
+                    choices.sort_unstable();
+                }
+                ui.horizontal(|ui| {
+                    ui.label("History Size:");
+                    egui::ComboBox::from_id_salt("chat_history_size")
+                        .selected_text(format!("{}", self.conversation_history_size))
+                        .show_ui(ui, |ui| {
+                            for &n in &choices {
+                                let label = if n == 1 {
+                                    "1 message".to_string()
+                                } else {
+                                    format!("{n} messages")
+                                };
+                                ui.selectable_value(&mut self.conversation_history_size, n, label);
+                            }
+                        });
+                });
+                ui.add_space(2.0);
+                ui.label(
+                    egui::RichText::new(
+                        "Number of recent agent replies kept in context for the next turn.",
+                    )
+                    .small()
+                    .weak(),
+                );
             });
 
             let test_fold = egui::collapsing_header::CollapsingState::load_with_default_open(
@@ -113,21 +155,6 @@ impl AMSAgents {
                             ctx.request_repaint();
                         });
                     }
-                });
-                ui.add_space(5.0);
-                ui.horizontal(|ui| {
-                    ui.label("Turn Delay (s):");
-                    ui.add(
-                        egui::DragValue::new(&mut self.conversation_turn_delay_secs)
-                            .range(0..=60)
-                            .speed(0.1),
-                    );
-                    ui.label("History:");
-                    ui.add(
-                        egui::DragValue::new(&mut self.conversation_history_size)
-                            .range(1..=50)
-                            .speed(0.1),
-                    );
                 });
             });
         });

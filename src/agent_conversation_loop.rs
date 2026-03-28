@@ -4,7 +4,6 @@ use crate::http_client::{send_evaluator_result, send_researcher_result};
 use crate::reproducibility::RunContext;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use tokio::time::{Duration, sleep};
 
 // --- Inline sidecar (evaluator / researcher Ollama runs per dialogue line) --------------
 
@@ -305,7 +304,6 @@ pub async fn start_conversation_loop(
     message_events: Arc<Mutex<Vec<String>>>,
     selected_model: Option<String>,
     history_size: usize,
-    turn_delay_secs: u64,
     run_context: Option<RunContext>,
     run_generation: u64,
     run_generation_counter: Arc<AtomicU64>,
@@ -551,11 +549,6 @@ pub async fn start_conversation_loop(
                 eprintln!("[Error] Ollama error in conversation loop: {}", e);
                 break;
             }
-        }
-
-        // Wait before next turn
-        if turn_delay_secs > 0 {
-            sleep(Duration::from_secs(turn_delay_secs)).await;
         }
 
         // Safety limit

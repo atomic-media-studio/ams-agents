@@ -15,7 +15,6 @@ pub struct AMSAgents {
     selected_ollama_model: String,
     evaluators: Vec<Evaluator>,
     researchers: Vec<Researcher>,
-    conversation_turn_delay_secs: u64,
     conversation_history_size: usize,
     /// Base URL for the Ollama API (e.g. http://127.0.0.1:11434).
     ollama_host: String,
@@ -63,7 +62,6 @@ impl AMSAgents {
             selected_ollama_model: std::env::var("OLLAMA_MODEL").unwrap_or_default(),
             evaluators: Vec::new(),
             researchers: Vec::new(),
-            conversation_turn_delay_secs: 3,
             conversation_history_size: 5,
             ollama_host: std::env::var("OLLAMA_HOST")
                 .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string()),
