@@ -5,7 +5,7 @@ use crate::reproducibility::RunContext;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-// --- Inline sidecar (evaluator / researcher Ollama runs per dialogue line) --------------
+// --- Sidecars: evaluators run after each line; researchers run pre-turn only (see below) --
 
 #[derive(Clone, Default)]
 pub struct ConversationSidecarConfig {
@@ -29,6 +29,155 @@ pub struct SidecarResearcher {
     pub instruction: String,
     pub limit_token: bool,
     pub num_predict: String,
+    /// Worker row id this researcher is wired to ("Injection"); pre-turn context uses the partner's last line.
+    pub target_worker_id: usize,
+}
+
+// --- Pre-turn research injection (tweak wording / placement here) -----------------------
+
+const RESEARCH_INJECTION_HEADER: &str = "\n\n---\nResearch references for your turn (consider when responding):\n";
+const RESEARCH_INJECTION_FOOTER: &str = "\n---\n";
+
+/// Where pre-turn research text is merged into the Ollama prompt for this worker turn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ResearchInjectionPlacement {
+    /// After formatted history + “Your turn…” (default).
+    ConversationContext,
+    /// After the system instruction block, before the transcript (stronger emphasis on references).
+    EnhancedInstruction,
+}
+
+pub const DEFAULT_RESEARCH_INJECTION_PLACEMENT: ResearchInjectionPlacement =
+    ResearchInjectionPlacement::ConversationContext;
+
+/// Merge non-empty `research_blocks` into the turn prompt per `placement`.
+pub fn apply_research_injection(
+    placement: ResearchInjectionPlacement,
+    mut enhanced_instruction: String,
+    mut conversation_context: String,
+    research_blocks: &str,
+) -> (String, String) {
+    if research_blocks.is_empty() {
+        return (enhanced_instruction, conversation_context);
+    }
+    let mut injection = String::with_capacity(
+        RESEARCH_INJECTION_HEADER.len() + research_blocks.len() + RESEARCH_INJECTION_FOOTER.len(),
+    );
+    injection.push_str(RESEARCH_INJECTION_HEADER);
+    injection.push_str(research_blocks);
+    injection.push_str(RESEARCH_INJECTION_FOOTER);
+    match placement {
+        ResearchInjectionPlacement::ConversationContext => conversation_context.push_str(&injection),
+        ResearchInjectionPlacement::EnhancedInstruction => enhanced_instruction.push_str(&injection),
+    }
+    (enhanced_instruction, conversation_context)
+}
+
+/// Topic label + full researcher Ollama instruction (shared by pre-turn injection).
+fn researcher_ollama_instruction(rs: &SidecarResearcher) -> (String, String) {
+    let topic = if rs.topic_mode.trim().is_empty() {
+        "Articles".to_string()
+    } else {
+        rs.topic_mode.clone()
+    };
+    let instruction = format!(
+        "{}\n\nUsing the latest chat message, suggest 3 {} references related to what was said. Keep it concise with bullet points: title and one-line why it matches.",
+        rs.instruction,
+        topic.to_lowercase()
+    );
+    (instruction, topic)
+}
+
+/// Run researchers that target `speaking_worker_id` on `message_for_research` (partner's last line),
+/// before that worker generates a reply. Outputs are merged for prompt injection; ledger/HTTP optional.
+pub async fn run_researchers_before_worker_turn(
+    sidecars: &ConversationSidecarConfig,
+    speaking_worker_id: usize,
+    message_for_research: &str,
+    ollama_host: &str,
+    endpoint: &str,
+    run_context: Option<&RunContext>,
+    selected_model: Option<&str>,
+    ollama_stop_epoch: Option<OllamaStopEpoch>,
+    post_http: bool,
+    ledger: Option<&Arc<EventLedger>>,
+) -> Result<String, ()> {
+    let mut blocks = Vec::new();
+    for rs in &sidecars.researchers {
+        if rs.target_worker_id != speaking_worker_id {
+            continue;
+        }
+        let (instruction, topic) = researcher_ollama_instruction(rs);
+        let ollama_input = format!("{}\n{}", instruction, message_for_research);
+        match crate::adk_integration::send_to_ollama(
+            ollama_host,
+            &instruction,
+            message_for_research,
+            rs.limit_token,
+            &rs.num_predict,
+            selected_model,
+            ollama_stop_epoch.clone(),
+        )
+        .await
+        {
+            Ok(response) => {
+                if let Some(l) = ledger {
+                    let _ = l.append_with_hashes(
+                        "sidecar.researcher",
+                        Some(rs.global_id.clone()),
+                        selected_model.map(|s| s.to_string()),
+                        &ollama_input,
+                        &response,
+                        serde_json::json!({
+                            "topic": topic,
+                            "phase": "pre_turn_injection",
+                        }),
+                    );
+                }
+                if post_http {
+                    if let Err(e) = send_researcher_result(
+                        endpoint,
+                        "Agent Researcher",
+                        &topic,
+                        &response,
+                        run_context,
+                        ledger,
+                    )
+                    .await
+                    {
+                        eprintln!("[Researcher] Failed to send to ams-chat: {}", e);
+                    }
+                }
+                blocks.push(format!(
+                    "### References ({topic})\n{response}",
+                    topic = topic,
+                    response = response
+                ));
+            }
+            Err(e) => {
+                if e.to_string() == crate::adk_integration::OLLAMA_STOPPED_MSG {
+                    return Err(());
+                }
+                if let Some(l) = ledger {
+                    let _ = l.append_with_hashes(
+                        "sidecar.researcher",
+                        Some(rs.global_id.clone()),
+                        selected_model.map(|s| s.to_string()),
+                        &ollama_input,
+                        "",
+                        serde_json::json!({
+                            "topic": topic,
+                            "phase": "pre_turn_injection",
+                            "stage": "ollama",
+                            "error": e.to_string(),
+                        }),
+                    );
+                }
+                eprintln!("[Researcher] Ollama error (pre-turn): {}", e);
+            }
+        }
+    }
+    Ok(blocks.join("\n\n"))
 }
 
 fn evaluator_sentiment(analysis_mode: &str, response: &str) -> &'static str {
@@ -63,8 +212,9 @@ fn evaluator_sentiment(analysis_mode: &str, response: &str) -> &'static str {
     }
 }
 
-/// Run all evaluator + researcher Ollama calls for one agent message before the dialogue advances.
-pub async fn run_sidecars_for_message(
+/// Evaluator sidecars after each dialogue line (`agent_message` = the line just spoken).
+/// Researchers are **not** run here; they run pre-turn via [`run_researchers_before_worker_turn`].
+pub async fn run_evaluator_sidecars_for_message(
     sidecars: &ConversationSidecarConfig,
     agent_message: &str,
     ollama_host: &str,
@@ -138,78 +288,6 @@ pub async fn run_sidecars_for_message(
         }
     }
 
-    for rs in &sidecars.researchers {
-        let topic = if rs.topic_mode.trim().is_empty() {
-            "Articles".to_string()
-        } else {
-            rs.topic_mode.clone()
-        };
-        let instruction = format!(
-            "{}\n\nUsing the latest chat message, suggest 3 {} references related to what was said. Keep it concise with bullet points: title and one-line why it matches.",
-            rs.instruction,
-            topic.to_lowercase()
-        );
-        let ollama_input = format!("{}\n{}", instruction, agent_message);
-        match crate::adk_integration::send_to_ollama(
-            ollama_host,
-            &instruction,
-            agent_message,
-            rs.limit_token,
-            &rs.num_predict,
-            selected_model,
-            ollama_stop_epoch.clone(),
-        )
-        .await
-        {
-            Ok(response) => {
-                if let Some(l) = ledger {
-                    let _ = l.append_with_hashes(
-                        "sidecar.researcher",
-                        Some(rs.global_id.clone()),
-                        selected_model.map(|s| s.to_string()),
-                        &ollama_input,
-                        &response,
-                        serde_json::json!({ "topic": topic }),
-                    );
-                }
-                if post_http {
-                    if let Err(e) = send_researcher_result(
-                        endpoint,
-                        "Agent Researcher",
-                        &topic,
-                        &response,
-                        run_context,
-                        ledger,
-                    )
-                    .await
-                    {
-                        eprintln!("[Researcher] Failed to send to ams-chat: {}", e);
-                    }
-                }
-            }
-            Err(e) => {
-                if e.to_string() == crate::adk_integration::OLLAMA_STOPPED_MSG {
-                    return Err(());
-                }
-                if let Some(l) = ledger {
-                    let _ = l.append_with_hashes(
-                        "sidecar.researcher",
-                        Some(rs.global_id.clone()),
-                        selected_model.map(|s| s.to_string()),
-                        &ollama_input,
-                        "",
-                        serde_json::json!({
-                            "topic": topic,
-                            "stage": "ollama",
-                            "error": e.to_string(),
-                        }),
-                    );
-                }
-                eprintln!("[Researcher] Ollama error: {}", e);
-            }
-        }
-    }
-
     Ok(())
 }
 
@@ -252,6 +330,15 @@ impl ConversationHistory {
         if self.messages.len() > self.max_history {
             self.messages.remove(0);
         }
+    }
+
+    /// Latest utterance from a participant (e.g. partner's last line before your turn).
+    fn last_message_from_agent(&self, agent_id: usize) -> Option<&str> {
+        self.messages
+            .iter()
+            .rev()
+            .find(|m| m.agent_id == agent_id)
+            .map(|m| m.message.as_str())
     }
 
     fn format_history(&self, _current_agent_name: &str, partner_name: &str, topic: &str) -> String {
@@ -410,15 +497,44 @@ pub async fn start_conversation_loop(
             sender_topic.clone()
         };
 
+        // Pre-turn: researchers wired to this speaker run on the partner's last message, then we inject into context.
+        let research_injection =
+            if let Some(partner_line) = history.last_message_from_agent(receiver_id) {
+                match run_researchers_before_worker_turn(
+                    sidecars.as_ref(),
+                    sender_id,
+                    partner_line,
+                    ollama_host.as_str(),
+                    endpoint.as_str(),
+                    run_context.as_ref(),
+                    selected_model.as_deref(),
+                    ollama_stop_epoch.clone(),
+                    true,
+                    ledger.as_ref(),
+                )
+                .await
+                {
+                    Ok(s) => s,
+                    Err(()) => break,
+                }
+            } else {
+                String::new()
+            };
+
         // Enhance instruction with conversation context
         let enhanced_instruction = format!(
             "{}\n\nYou are now in a conversation with {} about \"{}\". Keep your responses concise and engaging (2-3 sentences preferred).",
             sender_instruction, receiver_name, effective_topic
         );
 
-        // Build conversation context
         let conversation_context =
             history.format_history(&sender_name, &receiver_name, &effective_topic);
+        let (enhanced_instruction, conversation_context) = apply_research_injection(
+            DEFAULT_RESEARCH_INJECTION_PLACEMENT,
+            enhanced_instruction,
+            conversation_context,
+            &research_injection,
+        );
 
         // Print turn header
         let turn_message = format!("Turn {}: {} -> {}", turn + 1, sender_name, receiver_name);
@@ -510,8 +626,8 @@ pub async fn start_conversation_loop(
                     eprintln!("[HTTP] Failed to send message: {}", e);
                 }
 
-                // Evaluators / researchers: must finish before the next dialogue Ollama call.
-                if run_sidecars_for_message(
+                // Evaluators only (researchers run pre-turn). Must finish before the next dialogue Ollama call.
+                if run_evaluator_sidecars_for_message(
                     sidecars.as_ref(),
                     &response,
                     ollama_host.as_str(),
