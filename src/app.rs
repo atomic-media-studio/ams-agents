@@ -38,6 +38,8 @@ pub struct AMSAgents {
     current_manifest: Option<RunManifest>,
     manifest_export_path: String,
     manifest_import_path: String,
+    /// JSON path for Agents tab Load / Save (graph + runtime).
+    agents_workspace_path: String,
     manifest_status_message: String,
     read_only_replay_mode: bool,
     /// True while a started play is active (cleared on Stop or when all conversation tasks finish).
@@ -84,6 +86,7 @@ impl AMSAgents {
             current_manifest: None,
             manifest_export_path: "runs/exported-manifest.json".to_string(),
             manifest_import_path: "runs/import-manifest.json".to_string(),
+            agents_workspace_path: "runs/agents-workspace.json".to_string(),
             manifest_status_message: String::new(),
             read_only_replay_mode: false,
             conversation_graph_running: Arc::new(AtomicBool::new(false)),

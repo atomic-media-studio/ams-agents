@@ -1403,8 +1403,8 @@ impl AMSAgents {
         self.nodes_panel.next_agent_id = 0;
     }
 
-    pub(super) fn load_manifest_from_path(&mut self, path: PathBuf) -> anyhow::Result<()> {
-        let manifest = read_manifest(&path)?;
+    /// Rebuilds graph and runtime fields from a manifest (stops graph, clears agents).
+    fn apply_manifest_graph_and_runtime(&mut self, manifest: &RunManifest) -> anyhow::Result<()> {
         self.stop_graph();
         self.clear_graph();
 
@@ -1597,6 +1597,12 @@ impl AMSAgents {
         self.conversation_turn_delay_secs = manifest.runtime.turn_delay_secs;
         self.conversation_history_size = manifest.runtime.history_size;
 
+        Ok(())
+    }
+
+    pub(super) fn load_manifest_from_path(&mut self, path: PathBuf) -> anyhow::Result<()> {
+        let manifest = read_manifest(&path)?;
+        self.apply_manifest_graph_and_runtime(&manifest)?;
         self.read_only_replay_mode = true;
         self.current_run_context = Some(RunContext {
             manifest_version: manifest.manifest_version.clone(),
@@ -1605,6 +1611,24 @@ impl AMSAgents {
         });
         self.current_manifest = Some(manifest);
         self.manifest_status_message = format!("Loaded replay manifest: {}", path.display());
+        Ok(())
+    }
+
+    pub(super) fn save_agents_workspace_to_path(&mut self, path: PathBuf) -> anyhow::Result<()> {
+        let manifest = self.build_run_manifest(None, false)?;
+        export_manifest_to(&manifest, &path)?;
+        self.current_manifest = Some(manifest);
+        self.manifest_status_message = format!("Saved workspace: {}", path.display());
+        Ok(())
+    }
+
+    pub(super) fn load_agents_workspace_from_path(&mut self, path: PathBuf) -> anyhow::Result<()> {
+        let manifest = read_manifest(&path)?;
+        self.apply_manifest_graph_and_runtime(&manifest)?;
+        self.read_only_replay_mode = false;
+        self.current_run_context = None;
+        self.current_manifest = Some(manifest);
+        self.manifest_status_message = format!("Loaded workspace: {}", path.display());
         Ok(())
     }
 
@@ -2047,7 +2071,31 @@ impl AMSAgents {
                             self.nodes_panel
                                 .push_agent(egui::pos2(0.0, 0.0), node);
                         }
-                        ui.add_space(6.0);
+                        if self.read_only_replay_mode {
+                            ui.add_space(8.0);
+                            ui.label(egui::RichText::new("Replay mode (read-only)").weak());
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("File:");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.agents_workspace_path)
+                                .desired_width(280.0),
+                        );
+                        if ui.button("Load").clicked() {
+                            let path = PathBuf::from(self.agents_workspace_path.trim());
+                            if let Err(e) = self.load_agents_workspace_from_path(path) {
+                                self.manifest_status_message =
+                                    format!("Load workspace failed: {e}");
+                            }
+                        }
+                        if ui.button("Save").clicked() {
+                            let path = PathBuf::from(self.agents_workspace_path.trim());
+                            if let Err(e) = self.save_agents_workspace_to_path(path) {
+                                self.manifest_status_message =
+                                    format!("Save workspace failed: {e}");
+                            }
+                        }
                         let (start_stop_label, start_stop_hover) =
                             if self
                                 .conversation_graph_running
@@ -2080,10 +2128,12 @@ impl AMSAgents {
                                 let _ = self.run_graph();
                             }
                         }
-                        if self.read_only_replay_mode {
-                            ui.label(egui::RichText::new("Replay mode (read-only)").weak());
-                        }
                     });
+                    if !self.manifest_status_message.trim().is_empty() {
+                        ui.label(
+                            egui::RichText::new(self.manifest_status_message.clone()).small(),
+                        );
+                    }
                     ui.separator();
 
                     let mut node_ids: Vec<usize> =
