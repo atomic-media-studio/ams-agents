@@ -9,6 +9,14 @@ Agents Research Platform for HCI and Cognitive Sciences.
 - Reproducibility of inference
 - Local and field-first architecture
 
+
+### Dependencies
+
+- rust-adk
+- eframe
+- egui-phosphor
+
+
 ### Building
 
 ```sh
@@ -22,12 +30,6 @@ cargo run
 cargo build --release
 ```
 
-### Current Architecture
-
-- Agents are rows: **Manager**, **Worker**, **Evaluator**, **Researcher**, plus **Topic** presets.
-- Rows wire via dropdowns (e.g. worker→manager/topic).
-- **Start** saves a manifest and runs Ollama loops; workers with a topic are **paired in id order** (two workers ⇒ dialogue, one ⇒ solo loop).
-- **Evaluators**: post-line sidecar on each utterance when active. **Researchers**: pre-turn only (injection + HTTP) for the worker selected under Injection—no second post-line researcher pass. **Stop** ends all loops.
 
 ### Communication and Security
 
@@ -36,16 +38,4 @@ cargo build --release
 - **Conversation payloads** include fields such as `sender_id`, `receiver_id`, `topic`, and `message` (plus other event metadata as emitted).
 - **Sidecars:** evaluators attach `evaluator_name` and sentiment; researchers use `sentiment` (e.g. `references:<topic>`) on the configured injection path.
 - **Time and run identity:** timestamps are RFC3339 UTC; runs may carry `experiment_id`, `run_id`, and `manifest_version`.
-
-### Reproducible Runs
-
-- **Start** writes `runs/<experiment_id>/<run_id>/manifest.json` (`manifest_version = "2.0.0"`).
-- Manifest: runtime settings + **flat agent snapshot** (links live in each node `config`).
-- Settings: export manifest, load manifest + run (read-only), bundle zip.
-
-### Dependencies
-
-- rust-adk
-- eframe
-- egui-phosphor
 

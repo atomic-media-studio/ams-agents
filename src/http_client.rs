@@ -1,4 +1,5 @@
 use crate::event_ledger::EventLedger;
+use crate::http_policy::guard_http_request;
 use crate::reproducibility::RunContext;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -82,6 +83,17 @@ pub async fn send_conversation_message(
     };
 
     let payload_json = serde_json::to_string(&payload)?;
+
+    if let Err(e) = guard_http_request(endpoint, "conversation", ledger) {
+        push_outgoing_http_log_line(format!(
+            "BLOCKED {} | conversation | {} -> {} | {}",
+            endpoint,
+            sender_name,
+            receiver_name,
+            trim_line(message, 90),
+        ));
+        return Err(e);
+    }
 
     push_outgoing_http_log_line(format!(
         "POST {} | conversation | {} -> {} | {}",
@@ -170,6 +182,17 @@ pub async fn send_evaluator_result(
     };
     let payload_json = serde_json::to_string(&payload)?;
 
+    if let Err(e) = guard_http_request(endpoint, "evaluator", ledger) {
+        push_outgoing_http_log_line(format!(
+            "BLOCKED {} | evaluator {} [{}] | {}",
+            endpoint,
+            evaluator_name,
+            sentiment,
+            trim_line(message, 90),
+        ));
+        return Err(e);
+    }
+
     push_outgoing_http_log_line(format!(
         "POST {} | evaluator {} [{}] | {}",
         endpoint,
@@ -243,6 +266,17 @@ pub async fn send_researcher_result(
         manifest_version: run_context.map(|c| c.manifest_version.clone()),
     };
     let payload_json = serde_json::to_string(&payload)?;
+
+    if let Err(e) = guard_http_request(endpoint, "researcher", ledger) {
+        push_outgoing_http_log_line(format!(
+            "BLOCKED {} | researcher {} [{}] | {}",
+            endpoint,
+            researcher_name,
+            topic,
+            trim_line(message, 90),
+        ));
+        return Err(e);
+    }
 
     push_outgoing_http_log_line(format!(
         "POST {} | researcher {} [{}] | {}",

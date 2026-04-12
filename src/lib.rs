@@ -4,6 +4,7 @@ pub mod agent_entities;
 pub mod app;
 pub mod event_ledger;
 pub mod http_client;
+pub mod http_policy;
 pub mod reproducibility;
 pub mod vault;
 
