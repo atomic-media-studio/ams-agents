@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 use tokio::runtime::Handle;
 
 mod nodes_panel;
+mod python_panel;
 mod settings_panel;
 
 use crate::vault::MasterVault;
@@ -56,6 +57,17 @@ pub struct AMSAgents {
     conversation_run_generation: Arc<AtomicU64>,
     theme_applied: bool,
     phosphor_fonts_installed: bool,
+    // ── Python runtime panel ──────────────────────────────────────────────
+    python_label_input: String,
+    python_interpreter_input: String,
+    python_pkg_input: String,
+    python_active_runtime: Option<crate::python_runtime::PythonRuntime>,
+    python_op_running: Arc<AtomicBool>,
+    python_status: String,
+    python_bg_new_runtime:
+        Arc<Mutex<Option<Result<crate::python_runtime::PythonRuntime, String>>>>,
+    python_bg_msg: Arc<Mutex<Option<String>>>,
+    python_bg_destroyed: Arc<AtomicBool>,
     nodes_panel: nodes_panel::NodesPanelState,
 }
 
@@ -105,6 +117,15 @@ impl AMSAgents {
             conversation_run_generation: Arc::new(AtomicU64::new(0)),
             theme_applied: false,
             phosphor_fonts_installed: false,
+            python_label_input: String::new(),
+            python_interpreter_input: "python3".to_string(),
+            python_pkg_input: String::new(),
+            python_active_runtime: None,
+            python_op_running: Arc::new(AtomicBool::new(false)),
+            python_status: String::new(),
+            python_bg_new_runtime: Arc::new(Mutex::new(None)),
+            python_bg_msg: Arc::new(Mutex::new(None)),
+            python_bg_destroyed: Arc::new(AtomicBool::new(false)),
             nodes_panel: nodes_panel::NodesPanelState::default(),
         }
     }

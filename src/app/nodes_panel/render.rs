@@ -58,6 +58,15 @@ impl AMSAgents {
                         }
                         if ui
                             .selectable_label(
+                                self.nodes_panel.active_tab == PanelTab::Python,
+                                "Python",
+                            )
+                            .clicked()
+                        {
+                            self.nodes_panel.active_tab = PanelTab::Python;
+                        }
+                        if ui
+                            .selectable_label(
                                 self.nodes_panel.active_tab == PanelTab::Settings,
                                 "Settings",
                             )
@@ -88,6 +97,10 @@ impl AMSAgents {
                     if self.nodes_panel.active_tab == PanelTab::Ollama {
                         let ctx = ui.ctx().clone();
                         self.render_ollama_settings_widgets(ui, &ctx);
+                        return;
+                    }
+                    if self.nodes_panel.active_tab == PanelTab::Python {
+                        self.render_python_panel(ui);
                         return;
                     }
                     if self.nodes_panel.active_tab == PanelTab::Settings {

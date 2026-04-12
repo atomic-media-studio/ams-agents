@@ -577,6 +577,47 @@ pub fn default_registry_path() -> PathBuf {
     default_runtimes_dir().join("python_runtimes.json")
 }
 
+// ─── Package installation ──────────────────────────────────────────────────
+
+/// Install additional packages into an existing managed runtime via `pip install`.
+///
+/// Returns the combined pip stdout + stderr on success.
+/// Returns an error if the runtime is `Deleted` or pip exits non-zero.
+pub fn install_packages_in_runtime(
+    runtime: &PythonRuntime,
+    packages: &[String],
+) -> Result<String> {
+    if runtime.state == PythonRuntimeState::Deleted {
+        bail!("runtime {} is Deleted — cannot install packages", runtime.id);
+    }
+    let root = runtime
+        .root_path
+        .as_deref()
+        .ok_or_else(|| anyhow!("runtime {} has no root_path", runtime.id))?;
+    let pip = venv_bin_dir(root).join(if cfg!(windows) { "pip.exe" } else { "pip" });
+    if !pip.exists() {
+        bail!("pip not found at {} — is the venv healthy?", pip.display());
+    }
+    let out = Command::new(&pip)
+        .arg("install")
+        .args(packages)
+        .output()
+        .with_context(|| format!("run pip install in runtime {}", runtime.id))?;
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    if !out.status.success() {
+        bail!(
+            "pip install failed (exit {}): {}",
+            out.status,
+            combined.trim()
+        );
+    }
+    Ok(combined)
+}
+
 // ─── Tests ─────────────────────────────────────────────────────────────────
 
 #[cfg(test)]

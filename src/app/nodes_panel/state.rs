@@ -9,6 +9,7 @@ pub(crate) enum PanelTab {
     Overview,
     Agents,
     Ollama,
+    Python,
     Settings,
 }
 
