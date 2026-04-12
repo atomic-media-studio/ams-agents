@@ -23,6 +23,14 @@ fn default_ollama_host() -> String {
     "http://127.0.0.1:11434".to_string()
 }
 
+fn default_air_gap_enabled() -> bool {
+    false
+}
+
+fn default_allow_local_ollama() -> bool {
+    true
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RunRuntimeSettings {
     pub selected_model: Option<String>,
@@ -31,6 +39,10 @@ pub struct RunRuntimeSettings {
     pub ollama_host: String,
     pub history_size: usize,
     pub read_only_replay: bool,
+    #[serde(default = "default_air_gap_enabled")]
+    pub air_gap_enabled: bool,
+    #[serde(default = "default_allow_local_ollama")]
+    pub allow_local_ollama: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

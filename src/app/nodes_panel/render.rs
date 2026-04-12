@@ -65,6 +65,19 @@ impl AMSAgents {
                         {
                             self.nodes_panel.active_tab = PanelTab::Settings;
                         }
+                        if self.air_gap_enabled {
+                            ui.add_space(8.0);
+                            let mut badge = "Air-gap mode: outbound HTTP disabled";
+                            if !self.allow_local_ollama {
+                                badge = "Air-gap mode: outbound HTTP + Ollama disabled";
+                            }
+                            ui.label(egui::RichText::new(badge).small().strong().color(
+                                ui.visuals().warn_fg_color,
+                            ))
+                            .on_hover_text(
+                                "Policy is enforced at runtime: non-loopback HTTP is blocked and logged.",
+                            );
+                        }
                     });
                     ui.separator();
 

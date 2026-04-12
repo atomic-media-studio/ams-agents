@@ -38,6 +38,8 @@ impl AMSAgents {
             ollama_host: self.ollama_host.clone(),
             history_size: self.conversation_history_size,
             read_only_replay: self.read_only_replay_mode,
+            air_gap_enabled: self.air_gap_enabled,
+            allow_local_ollama: self.allow_local_ollama,
         }
     }
 
@@ -328,6 +330,9 @@ impl AMSAgents {
         self.http_endpoint = manifest.runtime.http_endpoint.clone();
         self.ollama_host = manifest.runtime.ollama_host.clone();
         self.conversation_history_size = manifest.runtime.history_size;
+        self.air_gap_enabled = manifest.runtime.air_gap_enabled;
+        self.allow_local_ollama = manifest.runtime.allow_local_ollama;
+        self.sync_http_policy();
 
         Ok(())
     }

@@ -1,5 +1,6 @@
 use crate::agent_entities::{Evaluator, Researcher};
 use crate::event_ledger::EventLedger;
+use crate::http_policy::HttpPolicy;
 use crate::reproducibility::{RunContext, RunManifest};
 use eframe::egui;
 use std::sync::atomic::{AtomicBool, AtomicU64};
@@ -19,6 +20,8 @@ pub struct AMSAgents {
     evaluators: Vec<Evaluator>,
     researchers: Vec<Researcher>,
     conversation_history_size: usize,
+    pub(super) air_gap_enabled: bool,
+    pub(super) allow_local_ollama: bool,
     /// Base URL for the Ollama API (e.g. http://127.0.0.1:11434).
     ollama_host: String,
     http_endpoint: String,
@@ -58,6 +61,9 @@ pub struct AMSAgents {
 
 impl AMSAgents {
     pub fn new(rt_handle: Handle) -> Self {
+        let http_policy = crate::http_policy::policy_from_env();
+        crate::http_policy::set_policy(http_policy);
+
         Self {
             rt_handle,
             ollama_models: Arc::new(Mutex::new(Vec::new())),
@@ -66,6 +72,8 @@ impl AMSAgents {
             evaluators: Vec::new(),
             researchers: Vec::new(),
             conversation_history_size: 5,
+            air_gap_enabled: http_policy.air_gap_enabled,
+            allow_local_ollama: http_policy.allow_local_ollama,
             ollama_host: std::env::var("OLLAMA_HOST")
                 .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string()),
             http_endpoint: std::env::var("CONVERSATION_HTTP_ENDPOINT")
@@ -99,6 +107,13 @@ impl AMSAgents {
             phosphor_fonts_installed: false,
             nodes_panel: nodes_panel::NodesPanelState::default(),
         }
+    }
+
+    pub(crate) fn sync_http_policy(&self) {
+        crate::http_policy::set_policy(HttpPolicy {
+            air_gap_enabled: self.air_gap_enabled,
+            allow_local_ollama: self.allow_local_ollama,
+        });
     }
 
     pub(crate) fn prepare_shell(&mut self, ctx: &egui::Context) {
