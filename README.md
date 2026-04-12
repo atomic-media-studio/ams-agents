@@ -1,6 +1,6 @@
-# arp
+# arpsci-dashboard
 
-Agents Research Platform for HCI and Cognitive Sciences.
+Agents Research Platform for HCI and Cognitive Sciences (Dashboard).
 
 ### Overview
 
