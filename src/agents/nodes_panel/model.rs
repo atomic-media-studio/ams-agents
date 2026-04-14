@@ -113,7 +113,7 @@ pub(crate) enum NodePayload {
 }
 
 #[derive(Clone)]
-pub(super) struct NodeData {
+pub(crate) struct NodeData {
     pub(crate) kind: AgentNodeKind,
     pub label: String,
     pub(crate) payload: NodePayload,

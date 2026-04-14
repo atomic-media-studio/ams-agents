@@ -15,18 +15,18 @@ pub(crate) enum PanelTab {
 
 /// One row in the Agents list (stable `id` for manifests and conversation loops).
 #[derive(Clone)]
-pub(super) struct AgentRecord {
-    pub id: usize,
-    pub position: egui::Pos2,
-    pub open: bool,
-    pub data: super::model::NodeData,
+pub(crate) struct AgentRecord {
+    pub(crate) id: usize,
+    pub(crate) position: egui::Pos2,
+    pub(crate) open: bool,
+    pub(crate) data: super::model::NodeData,
 }
 
 pub struct NodesPanelState {
-    pub(super) next_agent_id: usize,
-    pub(super) agents: Vec<AgentRecord>,
-    pub(super) selected_add_kind: super::model::AgentNodeKind,
-    pub(super) active_tab: PanelTab,
+    pub(crate) next_agent_id: usize,
+    pub(crate) agents: Vec<AgentRecord>,
+    pub(crate) selected_add_kind: super::model::AgentNodeKind,
+    pub(crate) active_tab: PanelTab,
 }
 
 impl Default for NodesPanelState {
@@ -41,7 +41,7 @@ impl Default for NodesPanelState {
 }
 
 impl NodesPanelState {
-    pub(super) fn push_agent(&mut self, pos: egui::Pos2, data: NodeData) -> usize {
+    pub(crate) fn push_agent(&mut self, pos: egui::Pos2, data: NodeData) -> usize {
         let id = self.next_agent_id;
         self.next_agent_id += 1;
         self.agents.push(AgentRecord {
@@ -53,7 +53,7 @@ impl NodesPanelState {
         id
     }
 
-    pub(super) fn insert_agent_with_id(
+    pub(crate) fn insert_agent_with_id(
         &mut self,
         id: usize,
         pos: egui::Pos2,
@@ -71,7 +71,7 @@ impl NodesPanelState {
         }
     }
 
-    pub(super) fn remove_agent(&mut self, id: usize) {
+    pub(crate) fn remove_agent(&mut self, id: usize) {
         self.agents.retain(|a| a.id != id);
     }
 }

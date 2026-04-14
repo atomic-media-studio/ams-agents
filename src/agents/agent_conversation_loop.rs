@@ -1,10 +1,10 @@
-use crate::conversation_sidecars::{
+use crate::agents::conversation_sidecars::{
     ConversationSidecarConfig, ResearchMessageGrounding, apply_research_injection,
     run_evaluator_sidecars_for_message, run_researchers_before_worker_turn,
     DEFAULT_RESEARCH_INJECTION_PLACEMENT,
 };
-use crate::event_ledger::EventLedger;
-use crate::manifest::RunContext;
+use crate::run::event_ledger::EventLedger;
+use crate::run::manifest::RunContext;
 use crate::ollama::OllamaStopEpoch;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -13,7 +13,6 @@ use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
 struct ConversationMessage {
-    #[allow(dead_code)]
     agent_id: usize,
     agent_name: String,
     message: String,

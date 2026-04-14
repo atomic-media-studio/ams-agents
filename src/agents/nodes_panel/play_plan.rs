@@ -53,8 +53,8 @@ pub(super) struct PlayResearcherInPlayJson {
 
 pub(super) fn build_conversation_sidecar_from_agents(
     agents: &[AgentRecord],
-) -> crate::conversation_sidecars::ConversationSidecarConfig {
-    use crate::conversation_sidecars::{
+) -> crate::agents::conversation_sidecars::ConversationSidecarConfig {
+    use crate::agents::conversation_sidecars::{
         ConversationSidecarConfig, SidecarEvaluator, SidecarResearcher,
     };
     let mut evaluators = Vec::new();

@@ -3,7 +3,7 @@ use reqwest::Url;
 use std::net::IpAddr;
 use std::sync::{Arc, OnceLock, RwLock};
 
-use crate::event_ledger::EventLedger;
+use crate::run::event_ledger::EventLedger;
 
 #[derive(Clone, Copy, Debug)]
 pub struct HttpPolicy {

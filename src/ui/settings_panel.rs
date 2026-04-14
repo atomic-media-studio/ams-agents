@@ -1,4 +1,5 @@
-use super::AMSAgents;
+use crate::agents::AMSAgents;
+use crate::ui::AMSAgentsUiState;
 use eframe::egui;
 
 /// Preset values for how many recent agent messages are included in the next dialogue prompt.
@@ -51,6 +52,7 @@ impl AMSAgents {
         &mut self,
         ui: &mut egui::Ui,
         ctx: &egui::Context,
+        ui_state: &mut AMSAgentsUiState,
     ) {
         ui.vertical(|ui| {
             let settings_fold = egui::collapsing_header::CollapsingState::load_with_default_open(
@@ -79,7 +81,7 @@ impl AMSAgents {
             let _ = test_fold.body(|ui| {
                 ui.horizontal(|ui| {
                     ui.label("Ollama Model:");
-                    let models = self.ollama_models.lock().unwrap().clone();
+                    let models = ui_state.ollama.models.lock().unwrap().clone();
                     if self.selected_ollama_model.is_empty() {
                         if let Some(first) = models.first() {
                             self.selected_ollama_model = first.clone();
@@ -101,15 +103,15 @@ impl AMSAgents {
                             }
                         });
 
-                    let loading = *self.ollama_models_loading.lock().unwrap();
+                    let loading = *ui_state.ollama.models_loading.lock().unwrap();
                     if ui
                         .button(if loading { "Loading" } else { "Refresh" })
                         .clicked()
                         && !loading
                     {
-                        *self.ollama_models_loading.lock().unwrap() = true;
-                        let models_arc = self.ollama_models.clone();
-                        let loading_arc = self.ollama_models_loading.clone();
+                        *ui_state.ollama.models_loading.lock().unwrap() = true;
+                        let models_arc = ui_state.ollama.models.clone();
+                        let loading_arc = ui_state.ollama.models_loading.clone();
                         let ctx = ctx.clone();
                         let handle = self.rt_handle.clone();
                         let ollama_host = self.ollama_host.clone();

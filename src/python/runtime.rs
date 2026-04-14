@@ -32,8 +32,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::event_ledger::EventLedger;
-use crate::manifest::now_rfc3339_utc;
+use crate::run::event_ledger::EventLedger;
+use crate::run::manifest::now_rfc3339_utc;
 
 // ─── Counters for unique IDs ───────────────────────────────────────────────
 

@@ -4,11 +4,12 @@ use std::sync::atomic::Ordering;
 use eframe::egui;
 use egui_phosphor::regular;
 
-use crate::ui::AMSAgents;
-
-use super::manifest_ops::sync_evaluator_researcher_activity;
-use super::model::{AgentNodeKind, NodeData, NodePayload};
-use super::state::{AgentRecord, PanelTab};
+use crate::agents::AMSAgents;
+use crate::agents::nodes_panel::{
+    sync_evaluator_researcher_activity, AgentNodeKind, AgentRecord, NodeData, NodePayload,
+    PanelTab,
+};
+use crate::ui::AMSAgentsUiState;
 
 #[derive(Default)]
 pub(super) struct BasicNodeViewer;
@@ -25,7 +26,7 @@ impl BasicNodeViewer {
 }
 
 impl AMSAgents {
-    pub(crate) fn render_nodes_panel(&mut self, ui: &mut egui::Ui) {
+    pub(crate) fn render_nodes_panel(&mut self, ui: &mut egui::Ui, ui_state: &mut AMSAgentsUiState) {
         let panel_border_color = ui.visuals().widgets.noninteractive.bg_stroke.color;
         let nodes_panel = egui::Frame::default()
             .fill(ui.visuals().panel_fill)
@@ -109,11 +110,11 @@ impl AMSAgents {
                     }
                     if self.nodes_panel.active_tab == PanelTab::Ollama {
                         let ctx = ui.ctx().clone();
-                        self.render_ollama_settings_widgets(ui, &ctx);
+                        self.render_ollama_settings_widgets(ui, &ctx, ui_state);
                         return;
                     }
                     if self.nodes_panel.active_tab == PanelTab::Python {
-                        self.render_python_panel(ui);
+                        self.render_python_panel(ui, ui_state);
                         return;
                     }
                     if self.nodes_panel.active_tab == PanelTab::Settings {
@@ -166,21 +167,27 @@ impl AMSAgents {
                     ui.horizontal(|ui| {
                         ui.label("File:");
                         ui.add(
-                            egui::TextEdit::singleline(&mut self.agents_workspace_path)
+                            egui::TextEdit::singleline(&mut ui_state.agents_workspace_path)
                                 .desired_width(280.0),
                         );
                         if ui.button("Load").clicked() {
-                            let path = PathBuf::from(self.agents_workspace_path.trim());
-                            if let Err(e) = self.load_agents_workspace_from_path(path) {
-                                self.manifest_status_message =
-                                    format!("Load workspace failed: {e}");
+                            let path = PathBuf::from(ui_state.agents_workspace_path.trim());
+                            match self.load_agents_workspace_from_path(path) {
+                                Ok(message) => ui_state.manifest_status_message = message,
+                                Err(e) => {
+                                    ui_state.manifest_status_message =
+                                        format!("Load workspace failed: {e}");
+                                }
                             }
                         }
                         if ui.button("Save").clicked() {
-                            let path = PathBuf::from(self.agents_workspace_path.trim());
-                            if let Err(e) = self.save_agents_workspace_to_path(path) {
-                                self.manifest_status_message =
-                                    format!("Save workspace failed: {e}");
+                            let path = PathBuf::from(ui_state.agents_workspace_path.trim());
+                            match self.save_agents_workspace_to_path(path) {
+                                Ok(message) => ui_state.manifest_status_message = message,
+                                Err(e) => {
+                                    ui_state.manifest_status_message =
+                                        format!("Save workspace failed: {e}");
+                                }
                             }
                         }
                         let (start_stop_label, start_stop_hover) =
@@ -212,13 +219,13 @@ impl AMSAgents {
                             {
                                 self.stop_graph();
                             } else {
-                                let _ = self.run_graph();
+                                ui_state.manifest_status_message = self.run_graph();
                             }
                         }
                     });
-                    if !self.manifest_status_message.trim().is_empty() {
+                    if !ui_state.manifest_status_message.trim().is_empty() {
                         ui.label(
-                            egui::RichText::new(self.manifest_status_message.clone()).small(),
+                            egui::RichText::new(ui_state.manifest_status_message.clone()).small(),
                         );
                     }
                     ui.separator();

@@ -1,218 +1,160 @@
-use crate::agent_entities::{Evaluator, Researcher};
-use crate::event_ledger::EventLedger;
-use crate::http_policy::HttpPolicy;
-use crate::manifest::{RunContext, RunManifest};
+use crate::agents::AMSAgents;
+use crate::vault::MasterVault;
 use eframe::egui;
-use std::sync::atomic::{AtomicBool, AtomicU64};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use tokio::runtime::Handle;
 
 mod nodes_panel;
+mod python_panel;
 mod settings_panel;
 
-use crate::vault::MasterVault;
-
-pub struct AMSAgents {
-    pub(crate) rt_handle: Handle,
-    ollama_models: Arc<Mutex<Vec<String>>>,
-    ollama_models_loading: Arc<Mutex<bool>>,
-    selected_ollama_model: String,
-    evaluators: Vec<Evaluator>,
-    researchers: Vec<Researcher>,
-    conversation_history_size: usize,
-    pub(super) air_gap_enabled: bool,
-    pub(super) allow_local_ollama: bool,
-    /// Base URL for the Ollama API (e.g. http://127.0.0.1:11434).
-    ollama_host: String,
-    http_endpoint: String,
-    last_message_in_chat: Arc<Mutex<Option<String>>>,
-    conversation_message_events: Arc<Mutex<Vec<String>>>,
-    last_evaluated_message_by_evaluator: Arc<Mutex<std::collections::HashMap<usize, String>>>,
-    last_researched_message_by_researcher: Arc<Mutex<std::collections::HashMap<usize, String>>>,
-    evaluator_event_queues:
-        Arc<Mutex<std::collections::HashMap<usize, std::collections::VecDeque<(String, String)>>>>,
-    researcher_event_queues:
-        Arc<Mutex<std::collections::HashMap<usize, std::collections::VecDeque<(String, String)>>>>,
-    evaluator_inflight_nodes: Arc<Mutex<std::collections::HashSet<usize>>>,
-    researcher_inflight_nodes: Arc<Mutex<std::collections::HashSet<usize>>>,
-    conversation_loop_handles: Vec<(usize, Arc<Mutex<bool>>, tokio::task::JoinHandle<()>)>,
-    /// Incremented on Stop (and at each run restart) so in-flight Ollama streams can exit promptly.
-    pub(super) ollama_run_epoch: Arc<AtomicU64>,
-    current_run_context: Option<RunContext>,
-    current_manifest: Option<RunManifest>,
-    /// JSON path for Agents tab Load / Save (graph + runtime).
-    agents_workspace_path: String,
-    /// Append-only ledger for the active run (`events.jsonl`), if any.
-    pub(super) event_ledger: Option<Arc<EventLedger>>,
-    manifest_status_message: String,
-    read_only_replay_mode: bool,
-    /// True while a started play is active (cleared on Stop or when all conversation tasks finish).
-    conversation_graph_running: Arc<AtomicBool>,
-    /// Bumped on each `run_graph`; stale conversation tasks ignore completion.
-    conversation_run_generation: Arc<AtomicU64>,
-    theme_applied: bool,
-    phosphor_fonts_installed: bool,
-    // ── Python runtime panel ──────────────────────────────────────────────
-    pub(crate) python_label_input: String,
-    pub(crate) python_interpreter_input: String,
-    pub(crate) python_pkg_input: String,
-    pub(crate) python_active_runtime: Option<crate::python::PythonRuntime>,
-    pub(crate) python_op_running: Arc<AtomicBool>,
-    pub(crate) python_status: String,
-    pub(crate) python_bg_new_runtime:
-        Arc<Mutex<Option<Result<crate::python::PythonRuntime, String>>>>,
-    pub(crate) python_bg_msg: Arc<Mutex<Option<String>>>,
-    pub(crate) python_bg_destroyed: Arc<AtomicBool>,
-    nodes_panel: nodes_panel::NodesPanelState,
+pub(crate) struct OllamaUiState {
+	pub(crate) models: Arc<Mutex<Vec<String>>>,
+	pub(crate) models_loading: Arc<Mutex<bool>>,
 }
 
-impl AMSAgents {
-    pub fn new(rt_handle: Handle) -> Self {
-        let http_policy = crate::http_policy::HttpPolicy::from_env();
-        crate::http_policy::set_policy(http_policy);
-
-        Self {
-            rt_handle,
-            ollama_models: Arc::new(Mutex::new(Vec::new())),
-            ollama_models_loading: Arc::new(Mutex::new(false)),
-            selected_ollama_model: std::env::var("OLLAMA_MODEL").unwrap_or_default(),
-            evaluators: Vec::new(),
-            researchers: Vec::new(),
-            conversation_history_size: 5,
-            air_gap_enabled: http_policy.air_gap_enabled,
-            allow_local_ollama: http_policy.allow_local_ollama,
-            ollama_host: std::env::var("OLLAMA_HOST")
-                .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string()),
-            http_endpoint: std::env::var("CONVERSATION_HTTP_ENDPOINT")
-                .unwrap_or_else(|_| "http://localhost:3000/".to_string()),
-            last_message_in_chat: Arc::new(Mutex::new(None)),
-            conversation_message_events: Arc::new(Mutex::new(Vec::new())),
-            last_evaluated_message_by_evaluator: Arc::new(Mutex::new(
-                std::collections::HashMap::new(),
-            )),
-            last_researched_message_by_researcher: Arc::new(Mutex::new(
-                std::collections::HashMap::new(),
-            )),
-            evaluator_event_queues: Arc::new(Mutex::new(std::collections::HashMap::new())),
-            researcher_event_queues: Arc::new(Mutex::new(std::collections::HashMap::new())),
-            evaluator_inflight_nodes: Arc::new(Mutex::new(std::collections::HashSet::new())),
-            researcher_inflight_nodes: Arc::new(Mutex::new(std::collections::HashSet::new())),
-            conversation_loop_handles: Vec::new(),
-            ollama_run_epoch: Arc::new(AtomicU64::new(0)),
-            current_run_context: None,
-            current_manifest: None,
-            agents_workspace_path: "runs/agents-workspace.json".to_string(),
-            event_ledger: None,
-            manifest_status_message: String::new(),
-            read_only_replay_mode: false,
-            conversation_graph_running: Arc::new(AtomicBool::new(false)),
-            conversation_run_generation: Arc::new(AtomicU64::new(0)),
-            theme_applied: false,
-            phosphor_fonts_installed: false,
-            python_label_input: String::new(),
-            python_interpreter_input: "python3".to_string(),
-            python_pkg_input: String::new(),
-            python_active_runtime: None,
-            python_op_running: Arc::new(AtomicBool::new(false)),
-            python_status: String::new(),
-            python_bg_new_runtime: Arc::new(Mutex::new(None)),
-            python_bg_msg: Arc::new(Mutex::new(None)),
-            python_bg_destroyed: Arc::new(AtomicBool::new(false)),
-            nodes_panel: nodes_panel::NodesPanelState::default(),
-        }
-    }
-
-    pub(crate) fn sync_http_policy(&self) {
-        crate::http_policy::set_policy(HttpPolicy {
-            air_gap_enabled: self.air_gap_enabled,
-            allow_local_ollama: self.allow_local_ollama,
-        });
-    }
-
-    pub(crate) fn prepare_shell(&mut self, ctx: &egui::Context) {
-        if !self.theme_applied {
-            catppuccin_egui::set_theme(ctx, catppuccin_egui::LATTE);
-            self.theme_applied = true;
-        }
-        if !self.phosphor_fonts_installed {
-            let mut fonts = ctx.fonts(|f| f.definitions().clone());
-            egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
-            ctx.set_fonts(fonts);
-            self.phosphor_fonts_installed = true;
-        }
-    }
+impl Default for OllamaUiState {
+	fn default() -> Self {
+		Self {
+			models: Arc::new(Mutex::new(Vec::new())),
+			models_loading: Arc::new(Mutex::new(false)),
+		}
+	}
 }
 
-impl eframe::App for AMSAgents {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.prepare_shell(ctx);
-        // Auto-refresh model list on startup
-        if self.ollama_models.lock().unwrap().is_empty()
-            && !*self.ollama_models_loading.lock().unwrap()
-        {
-            *self.ollama_models_loading.lock().unwrap() = true;
-            let models_arc = self.ollama_models.clone();
-            let loading_arc = self.ollama_models_loading.clone();
-            let ctx = ctx.clone();
-            let handle = self.rt_handle.clone();
-            let ollama_host = self.ollama_host.clone();
-            handle.spawn(async move {
-                let models = crate::ollama::fetch_ollama_models(&ollama_host)
-                    .await
-                    .unwrap_or_default();
-                *models_arc.lock().unwrap() = models;
-                *loading_arc.lock().unwrap() = false;
-                ctx.request_repaint();
-            });
-        }
-        let any_evaluator_active = self.evaluators.iter().any(|e| e.active);
-        let any_researcher_active = self.researchers.iter().any(|r| r.active);
-        if any_evaluator_active || any_researcher_active {
-            ctx.request_repaint();
-        }
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.vertical(|ui| {
-                ui.set_min_height(ui.available_height());
-                self.render_nodes_panel(ui);
-            });
-        });
-    }
+pub(crate) struct PythonPanelUiState {
+	pub(crate) label_input: String,
+	pub(crate) interpreter_input: String,
+	pub(crate) pkg_input: String,
+	pub(crate) active_runtime: Option<crate::python::PythonRuntime>,
+	pub(crate) op_running: Arc<AtomicBool>,
+	pub(crate) status: String,
+	pub(crate) bg_new_runtime:
+		Arc<Mutex<Option<Result<crate::python::PythonRuntime, String>>>>,
+	pub(crate) bg_msg: Arc<Mutex<Option<String>>>,
+	pub(crate) bg_destroyed: Arc<AtomicBool>,
+}
+
+impl Default for PythonPanelUiState {
+	fn default() -> Self {
+		Self {
+			label_input: String::new(),
+			interpreter_input: "python3".to_string(),
+			pkg_input: String::new(),
+			active_runtime: None,
+			op_running: Arc::new(AtomicBool::new(false)),
+			status: String::new(),
+			bg_new_runtime: Arc::new(Mutex::new(None)),
+			bg_msg: Arc::new(Mutex::new(None)),
+			bg_destroyed: Arc::new(AtomicBool::new(false)),
+		}
+	}
+}
+
+#[derive(Default)]
+pub(crate) struct AMSAgentsUiState {
+	pub(crate) ollama: OllamaUiState,
+	pub(crate) agents_workspace_path: String,
+	pub(crate) manifest_status_message: String,
+	pub(crate) python: PythonPanelUiState,
+}
+
+fn prepare_shell(
+	ctx: &egui::Context,
+	theme_applied: &mut bool,
+	phosphor_fonts_installed: &mut bool,
+) {
+	if !*theme_applied {
+		catppuccin_egui::set_theme(ctx, catppuccin_egui::LATTE);
+		*theme_applied = true;
+	}
+	if !*phosphor_fonts_installed {
+		let mut fonts = ctx.fonts(|f| f.definitions().clone());
+		egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
+		ctx.set_fonts(fonts);
+		*phosphor_fonts_installed = true;
+	}
+}
+
+fn refresh_ollama_models_on_startup(
+	ams_agents: &AMSAgents,
+	ui_state: &mut AMSAgentsUiState,
+	ctx: &egui::Context,
+) {
+	if ui_state.ollama.models.lock().unwrap().is_empty()
+		&& !*ui_state.ollama.models_loading.lock().unwrap()
+	{
+		*ui_state.ollama.models_loading.lock().unwrap() = true;
+		let models_arc = ui_state.ollama.models.clone();
+		let loading_arc = ui_state.ollama.models_loading.clone();
+		let ctx = ctx.clone();
+		let handle = ams_agents.rt_handle.clone();
+		let ollama_host = ams_agents.ollama_host.clone();
+		handle.spawn(async move {
+			let models = crate::ollama::fetch_ollama_models(&ollama_host)
+				.await
+				.unwrap_or_default();
+			*models_arc.lock().unwrap() = models;
+			*loading_arc.lock().unwrap() = false;
+			ctx.request_repaint();
+		});
+	}
 }
 
 pub struct AMSAgentsApp {
-    vault: MasterVault,
-    ams_agents: AMSAgents,
+	vault: MasterVault,
+	ams_agents: AMSAgents,
+	ui_state: AMSAgentsUiState,
+	theme_applied: bool,
+	phosphor_fonts_installed: bool,
 }
 
 impl AMSAgentsApp {
-    pub fn new(rt_handle: Handle) -> Self {
-        Self {
-            vault: MasterVault::new(),
-            ams_agents: AMSAgents::new(rt_handle),
-        }
-    }
+	pub fn new(rt_handle: Handle) -> Self {
+		Self {
+			vault: MasterVault::new(),
+			ams_agents: AMSAgents::new(rt_handle),
+			ui_state: AMSAgentsUiState {
+				agents_workspace_path: "runs/agents-workspace.json".to_string(),
+				..Default::default()
+			},
+			theme_applied: false,
+			phosphor_fonts_installed: false,
+		}
+	}
 }
 
 impl eframe::App for AMSAgentsApp {
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        self.ams_agents.prepare_shell(ctx);
+	fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+		prepare_shell(
+			ctx,
+			&mut self.theme_applied,
+			&mut self.phosphor_fonts_installed,
+		);
 
-        if !self.vault.is_unlocked() {
-            egui::CentralPanel::default().show(ctx, |ui| {
-                ui.vertical_centered(|ui| {
-                    ui.add_space(40.0);
-                    self.vault.show_unlock_ui(ui);
-                });
-            });
-            return;
-        }
+		if !self.vault.is_unlocked() {
+			egui::CentralPanel::default().show(ctx, |ui| {
+				ui.vertical_centered(|ui| {
+					ui.add_space(40.0);
+					self.vault.show_unlock_ui(ui);
+				});
+			});
+			return;
+		}
 
-        egui::TopBottomPanel::top("master_vault_lock_bar").show(ctx, |ui| {
-            if self.vault.show_lock_bar(ui) {
-                self.vault.lock();
-            }
-        });
+		egui::TopBottomPanel::top("master_vault_lock_bar").show(ctx, |ui| {
+			if self.vault.show_lock_bar(ui) {
+				self.vault.lock();
+			}
+		});
 
-        eframe::App::update(&mut self.ams_agents, ctx, frame);
-    }
+		refresh_ollama_models_on_startup(&self.ams_agents, &mut self.ui_state, ctx);
+		egui::CentralPanel::default().show(ctx, |ui| {
+			ui.vertical(|ui| {
+				ui.set_min_height(ui.available_height());
+				self.ams_agents.render_nodes_panel(ui, &mut self.ui_state);
+			});
+		});
+	}
 }

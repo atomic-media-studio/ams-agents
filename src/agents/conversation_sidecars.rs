@@ -3,9 +3,9 @@
 //! Evaluator sidecars run after each dialogue line; researcher sidecars run pre-turn
 //! and inject references into the speaking worker's prompt before inference.
 
-use crate::event_ledger::EventLedger;
+use crate::run::event_ledger::EventLedger;
 use crate::http_client::{send_evaluator_result, send_researcher_result};
-use crate::manifest::RunContext;
+use crate::run::manifest::RunContext;
 use crate::ollama::OllamaStopEpoch;
 use futures_util::future::join_all;
 use std::sync::Arc;

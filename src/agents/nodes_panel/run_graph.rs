@@ -1,9 +1,9 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use crate::ui::AMSAgents;
-use crate::event_ledger::EventLedger;
-use crate::manifest::runs_root;
+use crate::agents::AMSAgents;
+use crate::run::event_ledger::EventLedger;
+use crate::run::manifest::runs_root;
 use super::manifest_ops::sync_evaluator_researcher_activity;
 use super::model::NodePayload;
 use super::play_plan::{
@@ -34,8 +34,8 @@ impl AMSAgents {
             .clear();
     }
 
-    /// Returns `true` if the manifest was saved and conversation loops were (re)scheduled.
-    pub(crate) fn run_graph(&mut self) -> bool {
+    /// Returns a UI-facing status message for the most recent run action.
+    pub(crate) fn run_graph(&mut self) -> String {
         // Bulletproof behavior: re-run means stop existing graph processes first.
         self.stop_graph();
         self.last_evaluated_message_by_evaluator
@@ -62,19 +62,18 @@ impl AMSAgents {
             match self.build_run_manifest(experiment_id_override, self.read_only_replay_mode) {
                 Ok(m) => m,
                 Err(e) => {
-                    self.manifest_status_message = format!("Manifest build failed: {e}");
                     eprintln!("[Run Graph] Manifest build failed: {e}");
-                    return false;
+                    return format!("Manifest build failed: {e}");
                 }
             };
         let manifest_path = match self.persist_active_manifest(manifest) {
             Ok(p) => p,
             Err(e) => {
-                self.manifest_status_message = format!("Manifest save failed: {e}");
                 eprintln!("[Run Graph] Manifest save failed: {e}");
-                return false;
+                return format!("Manifest save failed: {e}");
             }
         };
+        let mut status_message = format!("Manifest saved: {}", manifest_path.display());
 
         if let Some(ctx) = self.current_run_context.as_ref() {
             let run_dir = manifest_path
@@ -85,14 +84,14 @@ impl AMSAgents {
                 Ok(ledger) => {
                     let arc = Arc::new(ledger);
                     if let Err(e) = arc.append_system_run_started(&manifest_path) {
-                        self.manifest_status_message = format!("Ledger start failed: {e}");
+                        status_message = format!("Ledger start failed: {e}");
                         eprintln!("[Run Graph] Ledger start failed: {e}");
                     } else {
                         self.event_ledger = Some(arc);
                     }
                 }
                 Err(e) => {
-                    self.manifest_status_message = format!("Ledger open failed: {e}");
+                    status_message = format!("Ledger open failed: {e}");
                     eprintln!("[Run Graph] Ledger open failed: {e}");
                 }
             }
@@ -142,7 +141,7 @@ impl AMSAgents {
             if let Some(ref l) = self.event_ledger {
                 let _ = l.try_finalize_run_stopped("no_eligible_conversation_workers");
             }
-            return true;
+            return status_message;
         }
 
         let n_conversation_loops = (eligible.len() + 1) / 2;
@@ -286,13 +285,13 @@ impl AMSAgents {
 
         self.conversation_graph_running
             .store(true, Ordering::Release);
-        true
+        status_message
     }
 
     /// Keys the async loop by `loop_key_node_id` (first worker in each pair). Conversation output nodes were removed; pairing is automatic from eligible workers.
     fn start_conversation_from_node_worker_resolved(
         &mut self,
-        sidecars: Arc<crate::conversation_sidecars::ConversationSidecarConfig>,
+        sidecars: Arc<crate::agents::conversation_sidecars::ConversationSidecarConfig>,
         run_generation: u64,
         run_generation_counter: Arc<AtomicU64>,
         loops_remaining_in_run: Arc<AtomicUsize>,
@@ -358,7 +357,7 @@ impl AMSAgents {
         let ledger = self.event_ledger.clone();
 
         let loop_handle = handle.spawn(async move {
-            crate::agent_conversation_loop::start_conversation_loop(
+            crate::agents::agent_conversation_loop::start_conversation_loop(
                 message_event_source_id,
                 ollama_stop_epoch,
                 sidecars,

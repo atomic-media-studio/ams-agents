@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 use eframe::egui;
 
-use crate::ui::AMSAgents;
-use crate::manifest::{
+use crate::agents::AMSAgents;
+use crate::run::manifest::{
     APP_NAME, GraphSnapshot, MANIFEST_VERSION, ManifestNode, RunContext, RunManifest,
     RunRuntimeSettings, canonical_graph_signature, derive_experiment_id, export_manifest_to,
     new_run_id, now_rfc3339_utc, read_manifest, runs_root, write_manifest,
@@ -22,7 +22,7 @@ fn json_opt_usize(config: &serde_json::Value, key: &str) -> Option<usize> {
     })
 }
 
-pub(super) fn sync_evaluator_researcher_activity(agents: &mut [AgentRecord]) {
+pub(crate) fn sync_evaluator_researcher_activity(agents: &mut [AgentRecord]) {
     for record in agents.iter_mut() {
         match &mut record.data.payload {
             NodePayload::Evaluator(evaluator) => {
@@ -178,7 +178,6 @@ impl AMSAgents {
             run_id: manifest.run_id.clone(),
         });
         self.current_manifest = Some(manifest);
-        self.manifest_status_message = format!("Manifest saved: {}", path.display());
         Ok(path)
     }
 
@@ -339,21 +338,25 @@ impl AMSAgents {
         Ok(())
     }
 
-    pub(crate) fn save_agents_workspace_to_path(&mut self, path: PathBuf) -> anyhow::Result<()> {
+    pub(crate) fn save_agents_workspace_to_path(
+        &mut self,
+        path: PathBuf,
+    ) -> anyhow::Result<String> {
         let manifest = self.build_run_manifest(None, false)?;
         export_manifest_to(&manifest, &path)?;
         self.current_manifest = Some(manifest);
-        self.manifest_status_message = format!("Saved workspace: {}", path.display());
-        Ok(())
+        Ok(format!("Saved workspace: {}", path.display()))
     }
 
-    pub(crate) fn load_agents_workspace_from_path(&mut self, path: PathBuf) -> anyhow::Result<()> {
+    pub(crate) fn load_agents_workspace_from_path(
+        &mut self,
+        path: PathBuf,
+    ) -> anyhow::Result<String> {
         let manifest = read_manifest(&path)?;
         self.apply_manifest_graph_and_runtime(&manifest)?;
         self.read_only_replay_mode = false;
         self.current_run_context = None;
         self.current_manifest = Some(manifest);
-        self.manifest_status_message = format!("Loaded workspace: {}", path.display());
-        Ok(())
+        Ok(format!("Loaded workspace: {}", path.display()))
     }
 }

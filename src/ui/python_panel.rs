@@ -10,37 +10,43 @@ use crate::python::{
     create_runtime, default_registry_path, default_runtimes_dir, delete_runtime,
     install_packages_in_runtime, PythonRuntimeSpec, RuntimeRegistry,
 };
-use crate::ui::AMSAgents;
+use crate::agents::AMSAgents;
+use crate::ui::AMSAgentsUiState;
 
 impl AMSAgents {
-    pub(crate) fn render_python_panel(&mut self, ui: &mut egui::Ui) {
+    pub(crate) fn render_python_panel(
+        &mut self,
+        ui: &mut egui::Ui,
+        ui_state: &mut AMSAgentsUiState,
+    ) {
+        let panel = &mut ui_state.python;
         // ── Poll results from background tasks ───────────────────────────
-        if let Some(result) = self.python_bg_new_runtime.lock().unwrap().take() {
+        if let Some(result) = panel.bg_new_runtime.lock().unwrap().take() {
             match result {
                 Ok(rt) => {
-                    self.python_status = format!(
+                    panel.status = format!(
                         "Runtime '{}' created (Python {}).",
                         rt.label, rt.python_version
                     );
-                    self.python_active_runtime = Some(rt);
+                    panel.active_runtime = Some(rt);
                 }
                 Err(e) => {
-                    self.python_status = format!("Error: {e}");
+                    panel.status = format!("Error: {e}");
                 }
             }
-            self.python_op_running.store(false, Ordering::Relaxed);
+            panel.op_running.store(false, Ordering::Relaxed);
         }
-        if let Some(msg) = self.python_bg_msg.lock().unwrap().take() {
-            self.python_status = msg;
-            self.python_op_running.store(false, Ordering::Relaxed);
+        if let Some(msg) = panel.bg_msg.lock().unwrap().take() {
+            panel.status = msg;
+            panel.op_running.store(false, Ordering::Relaxed);
         }
-        if self.python_bg_destroyed.swap(false, Ordering::Relaxed) {
-            self.python_active_runtime = None;
-            self.python_status = "Runtime destroyed and removed.".to_string();
-            self.python_op_running.store(false, Ordering::Relaxed);
+        if panel.bg_destroyed.swap(false, Ordering::Relaxed) {
+            panel.active_runtime = None;
+            panel.status = "Runtime destroyed and removed.".to_string();
+            panel.op_running.store(false, Ordering::Relaxed);
         }
 
-        let running = self.python_op_running.load(Ordering::Relaxed);
+        let running = panel.op_running.load(Ordering::Relaxed);
         if running {
             ui.ctx().request_repaint();
         }
@@ -49,7 +55,7 @@ impl AMSAgents {
             ui.add_space(4.0);
 
             // ── No active runtime → creation form ────────────────────────
-            if self.python_active_runtime.is_none() {
+            if panel.active_runtime.is_none() {
                 ui.label(egui::RichText::new("New Python Environment").strong());
                 ui.separator();
                 ui.add_space(4.0);
@@ -61,7 +67,7 @@ impl AMSAgents {
                         ui.label("Label:");
                         ui.add_enabled(
                             !running,
-                            egui::TextEdit::singleline(&mut self.python_label_input)
+                            egui::TextEdit::singleline(&mut panel.label_input)
                                 .desired_width(220.0)
                                 .hint_text("StroopTask-py3.11"),
                         );
@@ -70,7 +76,7 @@ impl AMSAgents {
                         ui.label("Interpreter:");
                         ui.add_enabled(
                             !running,
-                            egui::TextEdit::singleline(&mut self.python_interpreter_input)
+                            egui::TextEdit::singleline(&mut panel.interpreter_input)
                                 .desired_width(220.0),
                         );
                         ui.end_row();
@@ -84,18 +90,18 @@ impl AMSAgents {
                         ui.label("Creating environment");
                     });
                 } else {
-                    let label_ok = !self.python_label_input.trim().is_empty();
+                    let label_ok = !panel.label_input.trim().is_empty();
                     if ui
                         .add_enabled(label_ok, egui::Button::new("  Create env  "))
                         .on_disabled_hover_text("Enter a label first")
                         .clicked()
                     {
-                        let label = self.python_label_input.trim().to_string();
-                        let interpreter = self.python_interpreter_input.trim().to_string();
-                        let bg_rt = Arc::clone(&self.python_bg_new_runtime);
+                        let label = panel.label_input.trim().to_string();
+                        let interpreter = panel.interpreter_input.trim().to_string();
+                        let bg_rt = Arc::clone(&panel.bg_new_runtime);
                         let runtimes_dir = default_runtimes_dir();
-                        self.python_op_running.store(true, Ordering::Relaxed);
-                        self.python_status = "Creating…".to_string();
+                        panel.op_running.store(true, Ordering::Relaxed);
+                        panel.status = "Creating…".to_string();
                         self.rt_handle.spawn_blocking(move || {
                             let spec = PythonRuntimeSpec {
                                 base_interpreter: interpreter,
@@ -121,7 +127,7 @@ impl AMSAgents {
                 // Clone display data upfront to release the borrow on python_active_runtime
                 // so button click handlers can freely borrow other self fields.
                 let (rt_id, rt_label, rt_version, rt_path, rt_state, rt_cloned) = {
-                    let rt = self.python_active_runtime.as_ref().unwrap();
+                    let rt = panel.active_runtime.as_ref().unwrap();
                     (
                         rt.id.clone(),
                         rt.label.clone(),
@@ -171,7 +177,7 @@ impl AMSAgents {
                 ui.add_space(2.0);
                 ui.add_enabled(
                     !running,
-                    egui::TextEdit::multiline(&mut self.python_pkg_input)
+                    egui::TextEdit::multiline(&mut panel.pkg_input)
                         .desired_width(f32::INFINITY)
                         .desired_rows(4)
                         .hint_text("numpy>=1.26\npsychopy==2024.1.0"),
@@ -187,8 +193,8 @@ impl AMSAgents {
                     ui.horizontal(|ui| {
                         // Install
                         if ui.button("Install").clicked() {
-                            let packages: Vec<String> = self
-                                .python_pkg_input
+                            let packages: Vec<String> = panel
+                                .pkg_input
                                 .lines()
                                 .map(str::trim)
                                 .filter(|l| !l.is_empty())
@@ -196,9 +202,9 @@ impl AMSAgents {
                                 .collect();
                             if !packages.is_empty() {
                                 let rt = rt_cloned.clone();
-                                let bg_msg = Arc::clone(&self.python_bg_msg);
-                                self.python_op_running.store(true, Ordering::Relaxed);
-                                self.python_status = "Installing".to_string();
+                                let bg_msg = Arc::clone(&panel.bg_msg);
+                                panel.op_running.store(true, Ordering::Relaxed);
+                                panel.status = "Installing".to_string();
                                 self.rt_handle.spawn_blocking(move || {
                                     let result =
                                         install_packages_in_runtime(&rt, &packages)
@@ -215,7 +221,7 @@ impl AMSAgents {
 
                         // Open interactive terminal with venv activated
                         if ui.button("Open Env").on_hover_text("Open a terminal with this venv activated").clicked() {
-                            open_runtime_terminal(&rt_cloned, &mut self.python_status);
+                            open_runtime_terminal(&rt_cloned, &mut panel.status);
                         }
 
                         ui.add_space(8.0);
@@ -227,10 +233,10 @@ impl AMSAgents {
                         ));
                         if destroy_btn.clicked() {
                             let rt_id_del = rt_id.clone();
-                            let bg_msg = Arc::clone(&self.python_bg_msg);
-                            let bg_destroyed = Arc::clone(&self.python_bg_destroyed);
-                            self.python_op_running.store(true, Ordering::Relaxed);
-                            self.python_status = "Destroying".to_string();
+                            let bg_msg = Arc::clone(&panel.bg_msg);
+                            let bg_destroyed = Arc::clone(&panel.bg_destroyed);
+                            panel.op_running.store(true, Ordering::Relaxed);
+                            panel.status = "Destroying".to_string();
                             self.rt_handle.spawn_blocking(move || {
                                 let reg_path = default_registry_path();
                                 let outcome =
@@ -251,10 +257,10 @@ impl AMSAgents {
             }
 
             // ── Status bar ────────────────────────────────────────────────
-            if !self.python_status.is_empty() {
+            if !panel.status.is_empty() {
                 ui.add_space(8.0);
                 ui.separator();
-                ui.label(egui::RichText::new(&self.python_status).small().weak());
+                ui.label(egui::RichText::new(&panel.status).small().weak());
             }
         });
     }

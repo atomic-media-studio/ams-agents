@@ -2,9 +2,9 @@
 
 use eframe::egui;
 
-use super::model::{AgentNodeKind, EvaluatorAgentsPick, NodePayload};
-use super::presets::TOPIC_PRESETS;
-use super::state::AgentRecord;
+use crate::agents::nodes_panel::{
+    AgentNodeKind, AgentRecord, EvaluatorAgentsPick, NodePayload, TOPIC_PRESETS,
+};
 
 pub fn show_node_body(id: usize, ui: &mut egui::Ui, agents: &mut [AgentRecord]) {
     let Some(idx) = agents.iter().position(|a| a.id == id) else {

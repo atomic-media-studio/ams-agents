@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-use crate::manifest::now_rfc3339_utc;
+use crate::run::manifest::now_rfc3339_utc;
 
 pub const EVENTS_FILE: &str = "events.jsonl";
 pub const SUMMARY_FILE: &str = "summary.json";
