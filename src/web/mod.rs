@@ -83,6 +83,10 @@ impl WebConfig {
     }
 }
 
+pub fn outbound_webhooks_enabled() -> bool {
+    WebConfig::from_env().enabled
+}
+
 fn parse_bool_env(name: &str, default: bool) -> bool {
     match std::env::var(name) {
         Ok(v) => match v.trim().to_ascii_lowercase().as_str() {
@@ -235,6 +239,10 @@ pub async fn send_conversation_message(
     run_context: Option<&RunContext>,
     ledger: Option<&Arc<EventLedger>>,
 ) -> Result<(), anyhow::Error> {
+    if !outbound_webhooks_enabled() {
+        return Ok(());
+    }
+
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
@@ -339,6 +347,10 @@ pub async fn send_evaluator_result(
     run_context: Option<&RunContext>,
     ledger: Option<&Arc<EventLedger>>,
 ) -> Result<(), anyhow::Error> {
+    if !outbound_webhooks_enabled() {
+        return Ok(());
+    }
+
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
@@ -424,6 +436,10 @@ pub async fn send_researcher_result(
     run_context: Option<&RunContext>,
     ledger: Option<&Arc<EventLedger>>,
 ) -> Result<(), anyhow::Error> {
+    if !outbound_webhooks_enabled() {
+        return Ok(());
+    }
+
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
