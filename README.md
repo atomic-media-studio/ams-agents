@@ -28,6 +28,11 @@ cargo run --bin gen_master_hash
 # Development: run the application (`target/debug/`)
 cargo run
 
+# Development: run with embedded web server (`target/debug/`)
+AMS_WEB_ENABLED=true cargo run
+# http://127.0.0.1:8000/api/health
+# http://127.0.0.1:8000/api/outgoing-http-log
+
 # Distribution: build the application ('target/release/')
 cargo build --release
 ```
