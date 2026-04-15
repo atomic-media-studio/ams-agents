@@ -31,6 +31,10 @@ fn default_allow_local_ollama() -> bool {
     true
 }
 
+fn default_tracing() -> crate::tracing::TracingConfig {
+    crate::tracing::TracingConfig::default()
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RunRuntimeSettings {
     pub selected_model: Option<String>,
@@ -43,6 +47,8 @@ pub struct RunRuntimeSettings {
     pub air_gap_enabled: bool,
     #[serde(default = "default_allow_local_ollama")]
     pub allow_local_ollama: bool,
+    #[serde(default = "default_tracing")]
+    pub tracing: crate::tracing::TracingConfig,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

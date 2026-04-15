@@ -142,6 +142,7 @@ impl AMSAgents {
                         let handle = self.rt_handle.clone();
                         let model = self.selected_ollama_model.clone();
                         let ollama_host = self.ollama_host.clone();
+                        let metrics_sink = self.metrics_sink.clone();
                         handle.spawn(async move {
                             match crate::ollama::test_ollama(
                                 ollama_host.as_str(),
@@ -150,6 +151,7 @@ impl AMSAgents {
                                 } else {
                                     Some(model.as_str())
                                 },
+                                metrics_sink,
                             )
                             .await
                             {
@@ -227,6 +229,45 @@ impl AMSAgents {
 
             if policy_changed {
                 self.sync_http_policy();
+            }
+
+            ui.add_space(10.0);
+            ui.label(egui::RichText::new("Timing and Tracing").strong().size(12.0));
+            ui.separator();
+            let mut tracing_changed = false;
+            ui.horizontal(|ui| {
+                if ui
+                    .checkbox(
+                        &mut self.tracing_config.enabled,
+                        "Enable Ollama timing trace (JSONL)",
+                    )
+                    .changed()
+                {
+                    tracing_changed = true;
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.label("Tracing file:");
+                if ui
+                    .add(
+                        egui::TextEdit::singleline(&mut self.tracing_config.metrics_file)
+                            .desired_width(320.0),
+                    )
+                    .changed()
+                {
+                    tracing_changed = true;
+                }
+            });
+            ui.label(
+                egui::RichText::new(
+                    "Default path is metrics/timings.jsonl and the file is intended for offline research analysis.",
+                )
+                .small()
+                .weak(),
+            );
+
+            if tracing_changed {
+                self.refresh_metrics_sink();
             }
         });
     }

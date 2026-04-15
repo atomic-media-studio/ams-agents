@@ -5,6 +5,7 @@
 
 use crate::run::event_ledger::EventLedger;
 use crate::run::manifest::RunContext;
+use crate::tracing::{InferenceTraceContext, MetricsSink};
 use crate::web::{send_evaluator_result, send_researcher_result};
 use crate::ollama::OllamaStopEpoch;
 use futures_util::future::join_all;
@@ -142,6 +143,7 @@ pub async fn run_researchers_before_worker_turn(
     ollama_stop_epoch: Option<OllamaStopEpoch>,
     post_http: bool,
     ledger: Option<&Arc<EventLedger>>,
+    metrics_sink: Arc<dyn MetricsSink>,
 ) -> Result<String, ()> {
     let researchers: Vec<SidecarResearcher> = sidecars
         .researchers
@@ -158,6 +160,8 @@ pub async fn run_researchers_before_worker_turn(
     let host = ollama_host.to_string();
     let model = selected_model.map(|s| s.to_string());
     let epoch = ollama_stop_epoch.clone();
+    let experiment_id = run_context.map(|r| r.experiment_id.clone());
+    let run_id = run_context.map(|r| r.run_id.clone());
 
     let futures = researchers.into_iter().map(|rs| {
         let msg = msg.clone();
@@ -165,6 +169,9 @@ pub async fn run_researchers_before_worker_turn(
         let model = model.clone();
         let epoch = epoch.clone();
         let tied = tied_worker_name.to_string();
+        let metrics_sink = metrics_sink.clone();
+        let experiment_id = experiment_id.clone();
+        let run_id = run_id.clone();
         let category = if rs.topic_mode.trim().is_empty() {
             "Articles".to_string()
         } else {
@@ -181,6 +188,13 @@ pub async fn run_researchers_before_worker_turn(
                 &rs.num_predict,
                 model.as_deref(),
                 epoch,
+                metrics_sink,
+                InferenceTraceContext {
+                    source: "sidecar.researcher.pre_turn".to_string(),
+                    experiment_id,
+                    run_id,
+                    node_global_id: Some(rs.global_id.clone()),
+                },
             )
             .await;
             (rs, category, ollama_input, out)
@@ -300,7 +314,11 @@ pub async fn run_evaluator_sidecars_for_message(
     ollama_stop_epoch: Option<OllamaStopEpoch>,
     post_http: bool,
     ledger: Option<&Arc<EventLedger>>,
+    metrics_sink: Arc<dyn MetricsSink>,
 ) -> Result<(), ()> {
+    let experiment_id = run_context.map(|r| r.experiment_id.clone());
+    let run_id = run_context.map(|r| r.run_id.clone());
+
     for ev in &sidecars.evaluators {
         let ollama_input = format!("{}\n{}", ev.instruction, agent_message);
         match crate::ollama::send_to_ollama(
@@ -311,6 +329,13 @@ pub async fn run_evaluator_sidecars_for_message(
             &ev.num_predict,
             selected_model,
             ollama_stop_epoch.clone(),
+            metrics_sink.clone(),
+            InferenceTraceContext {
+                source: "sidecar.evaluator".to_string(),
+                experiment_id: experiment_id.clone(),
+                run_id: run_id.clone(),
+                node_global_id: Some(ev.global_id.clone()),
+            },
         )
         .await
         {

@@ -3,11 +3,14 @@ use crate::agents::conversation_sidecars::{
     run_evaluator_sidecars_for_message, run_researchers_before_worker_turn,
     DEFAULT_RESEARCH_INJECTION_PLACEMENT,
 };
+use crate::run::manifest::now_rfc3339_utc;
 use crate::run::event_ledger::EventLedger;
 use crate::run::manifest::RunContext;
 use crate::ollama::OllamaStopEpoch;
+use crate::tracing::{InferenceTraceContext, MetricsSink, TurnTimingEvent};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 // ─── Conversation history ─────────────────────────────────────────────────
 
@@ -112,10 +115,12 @@ pub async fn start_conversation_loop(
     loops_remaining_in_run: Arc<AtomicUsize>,
     conversation_graph_running: Arc<AtomicBool>,
     ledger: Option<Arc<EventLedger>>,
+    metrics_sink: Arc<dyn MetricsSink>,
 ) {
     let mut turn = 0;
     let mut is_agent_a_turn = true;
     let mut history = ConversationHistory::new(history_size.max(1));
+    let mut last_turn_end: Option<Instant> = None;
     let topics_summary = format!(
         "Topics => {}: \"{}\" | {}: \"{}\"",
         agent_a_name, agent_a_topic, agent_b_name, agent_b_topic,
@@ -225,6 +230,7 @@ pub async fn start_conversation_loop(
                 ollama_stop_epoch.clone(),
                 false,
                 ledger.as_ref(),
+                metrics_sink.clone(),
             )
             .await
             {
@@ -248,6 +254,20 @@ pub async fn start_conversation_loop(
             conversation_context,
             &research_injection,
         );
+
+        metrics_sink.emit_turn(TurnTimingEvent {
+            event_type: "turn_timing".to_string(),
+            timestamp: now_rfc3339_utc(),
+            experiment_id: run_context.as_ref().map(|r| r.experiment_id.clone()),
+            run_id: run_context.as_ref().map(|r| r.run_id.clone()),
+            loop_key_node_id: message_event_source_id,
+            turn_index: turn + 1,
+            speaker_id: sender_id,
+            speaker_name: sender_name.clone(),
+            receiver_id,
+            receiver_name: receiver_name.clone(),
+            gap_ms: last_turn_end.map(|t| t.elapsed().as_millis()),
+        });
 
         let turn_message = format!("Turn {}: {} -> {}", turn + 1, sender_name, receiver_name);
         println!("{}", turn_message);
@@ -276,6 +296,11 @@ pub async fn start_conversation_loop(
         });
 
         let dialogue_input = format!("{}\n---\n{}", enhanced_instruction, conversation_context);
+        let sender_gid = if sender_id == agent_a_id {
+            agent_a_global_id.clone()
+        } else {
+            agent_b_global_id.clone()
+        };
         match crate::ollama::send_to_ollama(
             ollama_host.as_str(),
             &enhanced_instruction,
@@ -284,15 +309,17 @@ pub async fn start_conversation_loop(
             "",
             selected_model.as_deref(),
             ollama_stop_epoch.clone(),
+            metrics_sink.clone(),
+            InferenceTraceContext {
+                source: "dialogue.turn".to_string(),
+                experiment_id: run_context.as_ref().map(|r| r.experiment_id.clone()),
+                run_id: run_context.as_ref().map(|r| r.run_id.clone()),
+                node_global_id: Some(sender_gid.clone()),
+            },
         )
         .await
         {
             Ok(response) => {
-                let sender_gid = if sender_id == agent_a_id {
-                    agent_a_global_id.clone()
-                } else {
-                    agent_b_global_id.clone()
-                };
                 if let Some(ref l) = ledger {
                     let _ = l.append_with_hashes(
                         "dialogue.turn",
@@ -351,12 +378,15 @@ pub async fn start_conversation_loop(
                     ollama_stop_epoch.clone(),
                     true,
                     ledger.as_ref(),
+                    metrics_sink.clone(),
                 )
                 .await
                 .is_err()
                 {
                     break;
                 }
+
+                last_turn_end = Some(Instant::now());
 
                 is_agent_a_turn = !is_agent_a_turn;
                 turn += 1;

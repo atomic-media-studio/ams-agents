@@ -9,6 +9,8 @@ use serde::Deserialize;
 use std::io::Write;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
+use std::time::Instant;
 
 const APP_NAME: &str = "ams-agents";
 const USER_ID: &str = "user1";
@@ -40,6 +42,20 @@ pub(crate) fn normalize_ollama_host(input: &str) -> String {
 pub(crate) struct RunnerContext {
     pub(crate) runner: Runner,
     pub(crate) session_id: String,
+    pub(crate) model_name: String,
+}
+
+pub(crate) struct StreamingResult {
+    pub(crate) response: String,
+    pub(crate) ttft: Option<Duration>,
+    pub(crate) usage: Option<TokenUsage>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct TokenUsage {
+    pub(crate) prompt_token_count: u64,
+    pub(crate) candidates_token_count: u64,
+    pub(crate) total_token_count: u64,
 }
 
 pub(crate) async fn fetch_models(ollama_host: &str) -> Result<Vec<String>> {
@@ -103,6 +119,7 @@ pub(crate) async fn build_runner_context(
     Ok(RunnerContext {
         runner,
         session_id: session.id().to_string(),
+        model_name,
     })
 }
 
@@ -111,7 +128,10 @@ pub(crate) async fn run_prompt_streaming(
     input: &str,
     print_response_prefix: bool,
     stop_epoch: Option<(Arc<AtomicU64>, u64)>,
-) -> Result<String> {
+) -> Result<StreamingResult> {
+    let stream_started = Instant::now();
+    let mut first_token_seen: Option<Duration> = None;
+    let mut usage: Option<TokenUsage> = None;
     let user_content = Content::new("user").with_text(input);
     let mut stream = runner_ctx
         .runner
@@ -136,6 +156,9 @@ pub(crate) async fn run_prompt_streaming(
                 if let Some(content) = event.llm_response.content.as_ref() {
                     for part in &content.parts {
                         if let adk_core::Part::Text { text } = part {
+                            if first_token_seen.is_none() {
+                                first_token_seen = Some(stream_started.elapsed());
+                            }
                             print!("{}", text);
                             let _ = std::io::stdout().flush();
                             response_parts.push(text.clone());
@@ -144,12 +167,17 @@ pub(crate) async fn run_prompt_streaming(
                 }
 
                 if event.llm_response.turn_complete {
-                    if let Some(usage) = &event.llm_response.usage_metadata {
+                    if let Some(usage_meta) = &event.llm_response.usage_metadata {
+                        usage = Some(TokenUsage {
+                            prompt_token_count: usage_meta.prompt_token_count as u64,
+                            candidates_token_count: usage_meta.candidates_token_count as u64,
+                            total_token_count: usage_meta.total_token_count as u64,
+                        });
                         println!(
                             "\n[Tokens: prompt={}, candidates={}, total={}]",
-                            usage.prompt_token_count,
-                            usage.candidates_token_count,
-                            usage.total_token_count
+                            usage_meta.prompt_token_count,
+                            usage_meta.candidates_token_count,
+                            usage_meta.total_token_count
                         );
                     }
                 }
@@ -162,7 +190,11 @@ pub(crate) async fn run_prompt_streaming(
     }
 
     println!();
-    Ok(response_parts.join(""))
+    Ok(StreamingResult {
+        response: response_parts.join(""),
+        ttft: first_token_seen,
+        usage,
+    })
 }
 
 pub(crate) fn print_context_preview(input_text: &str) {

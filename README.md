@@ -57,6 +57,31 @@ cargo build --release
     2) per-experiment/per-run execution artifacts
 
 
+### Timing and Tracing
+
+- Tracing is opt-in and captures Ollama inference timings to JSONL for offline research.
+- Captured fields include `t_start`, `t_first_token` (when streaming yields text), `t_end`, `duration_ms`, and `ttft_ms`.
+- Inter-turn pacing is also recorded (`turn_timing`) with `gap_ms` between turns.
+- Default output file: `metrics/timings.jsonl`.
+- The `metrics/` folder is intended for local artifacts and is excluded from git.
+
+Configuration options:
+
+- UI: Settings > Reproducibility > Timing and Tracing
+    - Enable/disable tracing
+    - Set output JSONL file path
+- Env vars:
+    - `AMS_TRACING_ENABLED=1`
+    - `AMS_TRACING_FILE=metrics/timings.jsonl`
+
+Sample JSONL records:
+
+```json
+{"event_type":"inference_timing","source":"dialogue.turn","duration_ms":1289,"ttft_ms":214}
+{"event_type":"turn_timing","turn_index":4,"speaker_name":"Agent A","receiver_name":"Agent B","gap_ms":411}
+```
+
+
 ### Python Runtimes
 
 You can create and manage isolated Python virtual environments per experiment via the **Python** tab.
