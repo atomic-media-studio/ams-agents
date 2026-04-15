@@ -14,7 +14,9 @@ Agents Research Platform for HCI and Cognitive Sciences (Dashboard).
 
 ### Main Dependencies
 
-- rust-adk (adk-agent, adk-model, adk-runner, adk-session, adk-core)
+
+- rust-adk 
+    - (adk-agent, adk-model, adk-runner, adk-session, adk-core)
 - eframe
 - egui-phosphor
 
@@ -45,6 +47,12 @@ cargo build --release
 - **Outbound HTTP:** JSON bodies are `POST`ed to `CONVERSATION_HTTP_ENDPOINT` (default `http://localhost:3000/`) unless air-gap mode is enabled.
 - **Air-gap mode:** set `AMS_AIR_GAP=1` to block non-loopback outbound HTTP; optional `AMS_ALLOW_LOCAL_OLLAMA=0` also blocks local Ollama requests. Blocked attempts are mirrored to the run ledger as `transport.http_blocked` events.
 
+### Reproducibility
+
+- The `./runs/` folder is the application persisted state and run history:
+    1) a workspace snapshot you can load/save outside a run,
+    2) per-experiment/per-run execution artifacts
+
 
 ### Python Runtimes
 
@@ -54,4 +62,9 @@ You can create and manage isolated Python virtual environments per experiment vi
 - Each runtime is stored under `runtimes/python/{id}/` and tracked in `python_runtimes.json`.
 - `pip freeze` is captured on creation for reproducibility; execution is fully traceable via the run ledger.
 
-Install NumPy on cursom venv: `import numpy as np; print(np.arange(6).reshape(2, 3))`
+Install NumPy on cursom venv:  
+
+```python
+import numpy as np
+print(np.arange(6).reshape(2, 3))
+```
