@@ -26,7 +26,7 @@ fn main() -> eframe::Result<()> {
     };
 
     eframe::run_native(
-        "ams-agents",
+        "arp-cogsci",
         options,
         Box::new(move |_cc| Ok(Box::new(AMSAgentsApp::new(rt_handle.clone())))),
     )
