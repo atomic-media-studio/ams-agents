@@ -3,8 +3,9 @@ use std::time::SystemTime;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use crate::app_state::AppState;
+use crate::metrics::{InferenceTimingEvent, InferenceTraceContext};
 use crate::run::manifest::now_rfc3339_utc;
-use crate::tracing::{InferenceTimingEvent, InferenceTraceContext, MetricsSink};
 
 mod client;
 
@@ -30,16 +31,17 @@ pub async fn send_to_ollama(
     num_predict: &str,
     model_override: Option<&str>,
     stop_epoch: Option<OllamaStopEpoch>,
-    metrics_sink: Arc<dyn MetricsSink>,
+    app_state: Arc<AppState>,
     trace_context: InferenceTraceContext,
 ) -> Result<String> {
+    let metrics_sink = app_state.metrics_sink();
     let t_start_wall = SystemTime::now();
     let t_start = std::time::Instant::now();
 
     if let Some((epoch, caught)) = &stop_epoch {
         if epoch.load(Ordering::SeqCst) != *caught {
             let t_end_wall = SystemTime::now();
-            metrics_sink.emit_inference(InferenceTimingEvent {
+            metrics_sink.record_inference(InferenceTimingEvent {
                 event_type: "inference_timing".to_string(),
                 timestamp: now_rfc3339_utc(),
                 source: trace_context.source.clone(),
@@ -76,7 +78,7 @@ pub async fn send_to_ollama(
         Ok(ctx) => ctx,
         Err(e) => {
             let t_end_wall = SystemTime::now();
-            metrics_sink.emit_inference(InferenceTimingEvent {
+            metrics_sink.record_inference(InferenceTimingEvent {
                 event_type: "inference_timing".to_string(),
                 timestamp: now_rfc3339_utc(),
                 source: trace_context.source.clone(),
@@ -113,7 +115,7 @@ pub async fn send_to_ollama(
             let ttft_ms = streaming.ttft.map(|d| d.as_millis());
             let output_chars = streaming.response.chars().count();
             let token_usage = streaming.usage.clone();
-            metrics_sink.emit_inference(InferenceTimingEvent {
+            metrics_sink.record_inference(InferenceTimingEvent {
                 event_type: "inference_timing".to_string(),
                 timestamp: now_rfc3339_utc(),
                 source: trace_context.source,
@@ -140,7 +142,7 @@ pub async fn send_to_ollama(
         }
         Err(e) => {
             let t_end_wall = SystemTime::now();
-            metrics_sink.emit_inference(InferenceTimingEvent {
+            metrics_sink.record_inference(InferenceTimingEvent {
                 event_type: "inference_timing".to_string(),
                 timestamp: now_rfc3339_utc(),
                 source: trace_context.source,
@@ -169,8 +171,9 @@ pub async fn send_to_ollama(
 pub async fn test_ollama(
     ollama_host: &str,
     model_override: Option<&str>,
-    metrics_sink: Arc<dyn MetricsSink>,
+    app_state: Arc<AppState>,
 ) -> Result<String> {
+    let metrics_sink = app_state.metrics_sink();
     let runner_ctx = client::build_runner_context(
         ollama_host,
         "You are a helpful assistant running locally via Ollama.",
@@ -191,7 +194,7 @@ pub async fn test_ollama(
                 .ttft
                 .and_then(|d| t_start_wall.checked_add(d))
                 .map(format_rfc3339);
-            metrics_sink.emit_inference(InferenceTimingEvent {
+            metrics_sink.record_inference(InferenceTimingEvent {
                 event_type: "inference_timing".to_string(),
                 timestamp: now_rfc3339_utc(),
                 source: "settings.test_ollama".to_string(),
@@ -219,7 +222,7 @@ pub async fn test_ollama(
         }
         Err(e) => {
             let t_end_wall = SystemTime::now();
-            metrics_sink.emit_inference(InferenceTimingEvent {
+            metrics_sink.record_inference(InferenceTimingEvent {
                 event_type: "inference_timing".to_string(),
                 timestamp: now_rfc3339_utc(),
                 source: "settings.test_ollama".to_string(),

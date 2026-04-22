@@ -3,14 +3,14 @@ use crate::agents::conversation_sidecars::{
     run_evaluator_sidecars_for_message, run_researchers_before_worker_turn,
     DEFAULT_RESEARCH_INJECTION_PLACEMENT,
 };
+use crate::app_state::AppState;
+use crate::metrics::{InferenceTraceContext, TurnTimingEvent, TurnTracker};
 use crate::run::manifest::now_rfc3339_utc;
 use crate::run::event_ledger::EventLedger;
 use crate::run::manifest::RunContext;
 use crate::ollama::OllamaStopEpoch;
-use crate::tracing::{InferenceTraceContext, MetricsSink, TurnTimingEvent};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
 
 // ─── Conversation history ─────────────────────────────────────────────────
 
@@ -115,12 +115,12 @@ pub async fn start_conversation_loop(
     loops_remaining_in_run: Arc<AtomicUsize>,
     conversation_graph_running: Arc<AtomicBool>,
     ledger: Option<Arc<EventLedger>>,
-    metrics_sink: Arc<dyn MetricsSink>,
+    app_state: Arc<AppState>,
 ) {
     let mut turn = 0;
     let mut is_agent_a_turn = true;
     let mut history = ConversationHistory::new(history_size.max(1));
-    let mut last_turn_end: Option<Instant> = None;
+    let mut turn_tracker = TurnTracker::default();
     let topics_summary = format!(
         "Topics => {}: \"{}\" | {}: \"{}\"",
         agent_a_name, agent_a_topic, agent_b_name, agent_b_topic,
@@ -230,7 +230,7 @@ pub async fn start_conversation_loop(
                 ollama_stop_epoch.clone(),
                 false,
                 ledger.as_ref(),
-                metrics_sink.clone(),
+                app_state.clone(),
             )
             .await
             {
@@ -255,18 +255,18 @@ pub async fn start_conversation_loop(
             &research_injection,
         );
 
-        metrics_sink.emit_turn(TurnTimingEvent {
+        app_state.metrics_sink().record_turn(TurnTimingEvent {
             event_type: "turn_timing".to_string(),
             timestamp: now_rfc3339_utc(),
             experiment_id: run_context.as_ref().map(|r| r.experiment_id.clone()),
             run_id: run_context.as_ref().map(|r| r.run_id.clone()),
             loop_key_node_id: message_event_source_id,
-            turn_index: turn + 1,
+            turn_index: turn_tracker.current_turn_index(),
             speaker_id: sender_id,
             speaker_name: sender_name.clone(),
             receiver_id,
             receiver_name: receiver_name.clone(),
-            gap_ms: last_turn_end.map(|t| t.elapsed().as_millis()),
+            gap_ms: turn_tracker.current_gap_ms(),
         });
 
         let turn_message = format!("Turn {}: {} -> {}", turn + 1, sender_name, receiver_name);
@@ -309,7 +309,7 @@ pub async fn start_conversation_loop(
             "",
             selected_model.as_deref(),
             ollama_stop_epoch.clone(),
-            metrics_sink.clone(),
+            app_state.clone(),
             InferenceTraceContext {
                 source: "dialogue.turn".to_string(),
                 experiment_id: run_context.as_ref().map(|r| r.experiment_id.clone()),
@@ -378,7 +378,7 @@ pub async fn start_conversation_loop(
                     ollama_stop_epoch.clone(),
                     true,
                     ledger.as_ref(),
-                    metrics_sink.clone(),
+                    app_state.clone(),
                 )
                 .await
                 .is_err()
@@ -386,7 +386,7 @@ pub async fn start_conversation_loop(
                     break;
                 }
 
-                last_turn_end = Some(Instant::now());
+                turn_tracker.mark_turn_completed();
 
                 is_agent_a_turn = !is_agent_a_turn;
                 turn += 1;

@@ -442,7 +442,7 @@ impl AMSAgents {
                         let epoch_arc = self.ollama_run_epoch.clone();
                         let epoch_caught = self.ollama_run_epoch.load(Ordering::SeqCst);
                         let ledger = self.event_ledger.clone();
-                        let metrics_sink = self.metrics_sink.clone();
+                        let app_state = self.app_state.clone();
                         let eval_global_id = e.global_id.clone();
                         handle.spawn(async move {
                             let ollama_in = format!("{}\n{}", instruction, message);
@@ -454,8 +454,8 @@ impl AMSAgents {
                                 &num_predict,
                                 selected_model.as_deref(),
                                 Some((epoch_arc, epoch_caught)),
-                                metrics_sink,
-                                crate::tracing::InferenceTraceContext {
+                                app_state,
+                                crate::metrics::InferenceTraceContext {
                                     source: "ui.sidecar.evaluator".to_string(),
                                     experiment_id: run_context
                                         .as_ref()
@@ -605,7 +605,7 @@ impl AMSAgents {
                         let epoch_arc = self.ollama_run_epoch.clone();
                         let epoch_caught = self.ollama_run_epoch.load(Ordering::SeqCst);
                         let ledger = self.event_ledger.clone();
-                        let metrics_sink = self.metrics_sink.clone();
+                        let app_state = self.app_state.clone();
                         let res_global_id = r.global_id.clone();
                         handle.spawn(async move {
                             let ollama_in = format!("{}\n{}", instruction, message);
@@ -617,8 +617,8 @@ impl AMSAgents {
                                 &num_predict,
                                 selected_model.as_deref(),
                                 Some((epoch_arc, epoch_caught)),
-                                metrics_sink,
-                                crate::tracing::InferenceTraceContext {
+                                app_state,
+                                crate::metrics::InferenceTraceContext {
                                     source: "ui.sidecar.researcher".to_string(),
                                     experiment_id: run_context
                                         .as_ref()

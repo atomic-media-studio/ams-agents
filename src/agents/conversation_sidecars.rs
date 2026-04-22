@@ -5,7 +5,8 @@
 
 use crate::run::event_ledger::EventLedger;
 use crate::run::manifest::RunContext;
-use crate::tracing::{InferenceTraceContext, MetricsSink};
+use crate::app_state::AppState;
+use crate::metrics::InferenceTraceContext;
 use crate::web::{send_evaluator_result, send_researcher_result};
 use crate::ollama::OllamaStopEpoch;
 use futures_util::future::join_all;
@@ -143,7 +144,7 @@ pub async fn run_researchers_before_worker_turn(
     ollama_stop_epoch: Option<OllamaStopEpoch>,
     post_http: bool,
     ledger: Option<&Arc<EventLedger>>,
-    metrics_sink: Arc<dyn MetricsSink>,
+    app_state: Arc<AppState>,
 ) -> Result<String, ()> {
     let researchers: Vec<SidecarResearcher> = sidecars
         .researchers
@@ -169,7 +170,7 @@ pub async fn run_researchers_before_worker_turn(
         let model = model.clone();
         let epoch = epoch.clone();
         let tied = tied_worker_name.to_string();
-        let metrics_sink = metrics_sink.clone();
+        let app_state = app_state.clone();
         let experiment_id = experiment_id.clone();
         let run_id = run_id.clone();
         let category = if rs.topic_mode.trim().is_empty() {
@@ -188,7 +189,7 @@ pub async fn run_researchers_before_worker_turn(
                 &rs.num_predict,
                 model.as_deref(),
                 epoch,
-                metrics_sink,
+                app_state,
                 InferenceTraceContext {
                     source: "sidecar.researcher.pre_turn".to_string(),
                     experiment_id,
@@ -314,7 +315,7 @@ pub async fn run_evaluator_sidecars_for_message(
     ollama_stop_epoch: Option<OllamaStopEpoch>,
     post_http: bool,
     ledger: Option<&Arc<EventLedger>>,
-    metrics_sink: Arc<dyn MetricsSink>,
+    app_state: Arc<AppState>,
 ) -> Result<(), ()> {
     let experiment_id = run_context.map(|r| r.experiment_id.clone());
     let run_id = run_context.map(|r| r.run_id.clone());
@@ -329,7 +330,7 @@ pub async fn run_evaluator_sidecars_for_message(
             &ev.num_predict,
             selected_model,
             ollama_stop_epoch.clone(),
-            metrics_sink.clone(),
+            app_state.clone(),
             InferenceTraceContext {
                 source: "sidecar.evaluator".to_string(),
                 experiment_id: experiment_id.clone(),

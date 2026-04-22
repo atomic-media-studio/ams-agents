@@ -160,7 +160,7 @@ impl AMSAgents {
                         let handle = self.rt_handle.clone();
                         let model = self.selected_ollama_model.clone();
                         let ollama_host = self.ollama_host.clone();
-                        let metrics_sink = self.metrics_sink.clone();
+                        let app_state = self.app_state.clone();
                         handle.spawn(async move {
                             match crate::ollama::test_ollama(
                                 ollama_host.as_str(),
@@ -169,7 +169,7 @@ impl AMSAgents {
                                 } else {
                                     Some(model.as_str())
                                 },
-                                metrics_sink,
+                                app_state,
                             )
                             .await
                             {
@@ -250,30 +250,30 @@ impl AMSAgents {
             }
 
             ui.add_space(10.0);
-            ui.label(egui::RichText::new("Timing and Tracing").strong().size(12.0));
+            ui.label(egui::RichText::new("Timing and Metrics").strong().size(12.0));
             ui.separator();
-            let mut tracing_changed = false;
+            let mut metrics_changed = false;
             ui.horizontal(|ui| {
                 if ui
                     .checkbox(
-                        &mut self.tracing_config.enabled,
-                        "Enable Ollama timing trace (JSONL)",
+                        &mut self.metrics_config.enabled,
+                        "Enable Ollama timing metrics (JSONL)",
                     )
                     .changed()
                 {
-                    tracing_changed = true;
+                    metrics_changed = true;
                 }
             });
             ui.horizontal(|ui| {
-                ui.label("Tracing file:");
+                ui.label("Metrics file:");
                 if ui
                     .add(
-                        egui::TextEdit::singleline(&mut self.tracing_config.metrics_file)
+                        egui::TextEdit::singleline(&mut self.metrics_config.metrics_file)
                             .desired_width(320.0),
                     )
                     .changed()
                 {
-                    tracing_changed = true;
+                    metrics_changed = true;
                 }
             });
             ui.label(
@@ -284,7 +284,7 @@ impl AMSAgents {
                 .weak(),
             );
 
-            if tracing_changed {
+            if metrics_changed {
                 self.refresh_metrics_sink();
             }
         });

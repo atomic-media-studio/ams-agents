@@ -3,7 +3,6 @@
 Agents Research Platform for HCI and Cognitive Sciences (Dashboard).
 
 
-
 ### Overview
 
 - Multi-agent conversations
@@ -45,10 +44,10 @@ cargo build --release
 
 ### Communication and Security
 
-- **Vault:** master password verification uses **Argon2id** with non-trivial defaults (`m=65536 KiB`, `t=3`, `p<=4`), persisted as PHC hash in `runs/.master_hash` (or `AMS_MASTER_HASH`). KDF tuning: `AMS_ARGON2_M_KIB`, `AMS_ARGON2_T`, `AMS_ARGON2_P`.
-- **Vault key derivation + encryption:** vault payload keys are derived separately from the master password (`Argon2id + HKDF-SHA256`) and encrypted with AEAD (`ChaCha20-Poly1305`) using random salt/nonce and versioned metadata.
-- **Outbound HTTP:** JSON bodies are `POST`ed to `CONVERSATION_HTTP_ENDPOINT` (default `http://localhost:3000/`) unless air-gap mode is enabled.
-- **Air-gap mode:** set `AMS_AIR_GAP=1` to block non-loopback outbound HTTP; optional `AMS_ALLOW_LOCAL_OLLAMA=0` also blocks local Ollama requests. Blocked attempts are mirrored to the run ledger as `transport.http_blocked` events.
+- Vault: master password verification uses Argon2id.
+- Vault key derivation + encryption: vault payload keys are derived separately from the master password (`Argon2id + HKDF-SHA256`) and encrypted with AEAD (`ChaCha20-Poly1305`) using random salt/nonce and versioned metadata.
+- Outbound HTTP: JSON bodies are `POST`ed to `CONVERSATION_HTTP_ENDPOINT` (default `http://localhost:3000/`) unless air-gap mode is enabled.
+- Air-gap mode: set `AMS_AIR_GAP=1` to block non-loopback outbound HTTP.
 
 ### Reproducibility
 
@@ -57,22 +56,20 @@ cargo build --release
     2) per-experiment/per-run execution artifacts
 
 
-### Timing and Tracing
+### Timing and Metrics
 
-- Tracing is opt-in and captures Ollama inference timings to JSONL for offline research.
+- Metrics capture is app-global and enabled by default.
+- The app always records timing metrics unless you explicitly disable recording in Settings.
+- Metrics are written to JSONL for offline research.
 - Captured fields include `t_start`, `t_first_token` (when streaming yields text), `t_end`, `duration_ms`, and `ttft_ms`.
 - Inter-turn pacing is also recorded (`turn_timing`) with `gap_ms` between turns.
 - Default output file: `metrics/timings.jsonl`.
-- The `metrics/` folder is intended for local artifacts and is excluded from git.
 
 Configuration options:
 
-- UI: Settings > Reproducibility > Timing and Tracing
-    - Enable/disable tracing
+- UI: Settings > Reproducibility > Timing and Metrics
+    - Enable/disable metrics capture (global app switch)
     - Set output JSONL file path
-- Env vars:
-    - `AMS_TRACING_ENABLED=1`
-    - `AMS_TRACING_FILE=metrics/timings.jsonl`
 
 Sample JSONL records:
 
@@ -90,7 +87,7 @@ You can create and manage isolated Python virtual environments per experiment vi
 - Each runtime is stored under `runtimes/python/{id}/` and tracked in `python_runtimes.json`.
 - `pip freeze` is captured on creation for reproducibility; execution is fully traceable via the run ledger.
 
-Install NumPy on cursom venv:  
+Install NumPy on custom venv:  
 
 ```python
 import numpy as np

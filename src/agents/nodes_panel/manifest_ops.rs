@@ -54,7 +54,7 @@ impl AMSAgents {
             read_only_replay: self.read_only_replay_mode,
             air_gap_enabled: self.air_gap_enabled,
             allow_local_ollama: self.allow_local_ollama,
-            tracing: self.tracing_config.clone(),
+            metrics: self.metrics_config.clone(),
         }
     }
 
@@ -334,7 +334,6 @@ impl AMSAgents {
         self.conversation_history_size = manifest.runtime.history_size;
         self.air_gap_enabled = manifest.runtime.air_gap_enabled;
         self.allow_local_ollama = manifest.runtime.allow_local_ollama;
-        self.tracing_config = manifest.runtime.tracing.clone();
         self.sync_http_policy();
         self.refresh_metrics_sink();
 

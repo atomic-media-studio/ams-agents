@@ -1,6 +1,7 @@
+use crate::app_state::AppState;
+use crate::metrics::MetricsConfig;
 use crate::run::event_ledger::EventLedger;
 use crate::run::manifest::{RunContext, RunManifest};
-use crate::tracing::{MetricsSink, TracingConfig, build_metrics_sink};
 use crate::web::HttpPolicy;
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex};
@@ -12,14 +13,14 @@ pub(crate) mod nodes_panel;
 
 pub struct AMSAgents {
     pub(crate) rt_handle: Handle,
+    pub(crate) app_state: Arc<AppState>,
     pub(crate) selected_ollama_model: String,
     pub(crate) conversation_history_size: usize,
     pub(crate) air_gap_enabled: bool,
     pub(crate) allow_local_ollama: bool,
     /// Base URL for the Ollama API (e.g. http://127.0.0.1:11434).
     pub(crate) ollama_host: String,
-    pub(crate) tracing_config: TracingConfig,
-    pub(crate) metrics_sink: Arc<dyn MetricsSink>,
+    pub(crate) metrics_config: MetricsConfig,
     pub(crate) http_endpoint: String,
     pub(crate) last_message_in_chat: Arc<Mutex<Option<String>>>,
     pub(crate) conversation_message_events: Arc<Mutex<Vec<String>>>,
@@ -52,19 +53,19 @@ impl AMSAgents {
     pub fn new(rt_handle: Handle) -> Self {
         let http_policy = crate::web::HttpPolicy::from_env();
         crate::web::set_policy(http_policy);
-        let tracing_config = TracingConfig::from_env();
-        let metrics_sink = build_metrics_sink(&tracing_config);
+        let metrics_config = MetricsConfig::from_env();
+        let app_state = Arc::new(AppState::new(metrics_config.clone()));
 
         Self {
             rt_handle,
+            app_state,
             selected_ollama_model: std::env::var("OLLAMA_MODEL").unwrap_or_default(),
             conversation_history_size: 5,
             air_gap_enabled: http_policy.air_gap_enabled,
             allow_local_ollama: http_policy.allow_local_ollama,
             ollama_host: std::env::var("OLLAMA_HOST")
                 .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string()),
-            tracing_config,
-            metrics_sink,
+            metrics_config,
             http_endpoint: std::env::var("CONVERSATION_HTTP_ENDPOINT")
                 .unwrap_or_else(|_| "http://localhost:3000/".to_string()),
             last_message_in_chat: Arc::new(Mutex::new(None)),
@@ -99,6 +100,7 @@ impl AMSAgents {
     }
 
     pub(crate) fn refresh_metrics_sink(&mut self) {
-        self.metrics_sink = build_metrics_sink(&self.tracing_config);
+        self.app_state
+            .update_metrics_config(self.metrics_config.clone());
     }
 }

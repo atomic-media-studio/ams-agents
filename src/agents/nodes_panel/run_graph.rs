@@ -355,7 +355,7 @@ impl AMSAgents {
             })
             .unwrap_or_default();
         let ledger = self.event_ledger.clone();
-        let metrics_sink = self.metrics_sink.clone();
+        let app_state = self.app_state.clone();
 
         let loop_handle = handle.spawn(async move {
             crate::agents::agent_conversation_loop::start_conversation_loop(
@@ -387,7 +387,7 @@ impl AMSAgents {
                 loops_remaining_in_run,
                 conversation_graph_running_flag,
                 ledger,
-                metrics_sink,
+                app_state,
             )
             .await;
         });
