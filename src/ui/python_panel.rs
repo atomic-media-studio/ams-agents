@@ -1,5 +1,4 @@
 //! Python runtime management panel — issue #16.
-//! Rendered as the "Python" tab between "Ollama" and "Settings".
 
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -56,7 +55,7 @@ impl AMSAgents {
 
             // ── No active runtime → creation form ────────────────────────
             if panel.active_runtime.is_none() {
-                ui.label(egui::RichText::new("New Python Environment").strong());
+                ui.label(egui::RichText::new("Python Environments").strong().size(16.0));
                 ui.separator();
                 ui.add_space(4.0);
 
@@ -142,7 +141,7 @@ impl AMSAgents {
                     )
                 };
 
-                ui.label(egui::RichText::new("Active Runtime").strong());
+                ui.label(egui::RichText::new("Active Runtime").strong().size(16.0));
                 ui.separator();
                 egui::Grid::new("py_rt_info")
                     .num_columns(2)
@@ -168,7 +167,7 @@ impl AMSAgents {
                 ui.add_space(8.0);
 
                 // ── Install packages ──────────────────────────────────────
-                ui.label(egui::RichText::new("Install Packages").strong());
+                ui.label(egui::RichText::new("Install Packages").strong().size(16.0));
                 ui.separator();
                 ui.label(
                     egui::RichText::new("One package per line, e.g.  numpy>=1.26")
