@@ -60,22 +60,7 @@ cargo build --release
 - Metrics capture is app-global and enabled by default.
 - The app always records timing metrics unless you explicitly disable recording in Settings.
 - Metrics are written to JSONL for offline research.
-- Captured fields include `t_start`, `t_first_token` (when streaming yields text), `t_end`, `duration_ms`, and `ttft_ms`.
-- Inter-turn pacing is also recorded (`turn_timing`) with `gap_ms` between turns.
 - Default output file: `metrics/timings.jsonl`.
-
-Configuration options:
-
-- UI: Settings > Reproducibility > Timing and Metrics
-    - Enable/disable metrics capture (global app switch)
-    - Set output JSONL file path
-
-Sample JSONL records:
-
-```json
-{"event_type":"inference_timing","source":"dialogue.turn","duration_ms":1289,"ttft_ms":214}
-{"event_type":"turn_timing","turn_index":4,"speaker_name":"Agent A","receiver_name":"Agent B","gap_ms":411}
-```
 
 
 ### Python Runtimes
