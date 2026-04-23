@@ -1,5 +1,7 @@
 # arpsci-dashboard
 
+Under heavy development. 
+
 Agents Research Platform for HCI and Cognitive Sciences (Dashboard).
 
 - Multi-agent conversations
@@ -8,9 +10,7 @@ Agents Research Platform for HCI and Cognitive Sciences (Dashboard).
 - Local and field-first architecture
 
 
-
 ### Dependencies
-
 
 - rust-adk
 - eframe
@@ -20,9 +20,10 @@ Agents Research Platform for HCI and Cognitive Sciences (Dashboard).
 ### Building
 
 ```sh
-# One-time vault: interactive prompt writes `runs/.master_hash` (PHC Argon2id hash for the password gate)
+# One-time vault: Writes `runs/.master_hash` (PHC Argon2id hash)
 # Ubuntu 22
 cargo run --bin gen_master_hash
+
 # Windows 11
 $env:CARGO_TARGET_DIR="target-hash-win11"; cargo run --bin gen_master_hash
 
@@ -45,6 +46,11 @@ cargo build --release
     2) per-experiment/per-run execution artifacts
 
 
+### uv Tests
+
+```sh
+Being done
+```
 
 ### Security
 
