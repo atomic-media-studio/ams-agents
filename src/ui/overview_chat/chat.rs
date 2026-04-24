@@ -1,3 +1,13 @@
+#[derive(Debug, Clone)]
+pub struct Room {
+	pub id: String,
+	pub name: String,
+}
+impl Room {
+	pub fn new(id: String, name: String) -> Self {
+		Room { id, name }
+	}
+}
 // Ported from openchat/src/chat.rs
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -47,6 +57,11 @@ pub struct ChatExample {
     pub waiting_for_response: Arc<std::sync::Mutex<bool>>,
     pub picked_file_path: Option<String>,
     pub main_input_enabled: bool,
+
+	// Sidebar state
+	pub rooms: Vec<Room>,
+	pub sidebar_open: bool,
+	pub selected_room: Option<String>,
 }
 
 impl Default for ChatExample {
@@ -56,6 +71,36 @@ impl Default for ChatExample {
 }
 
 impl ChatExample {
+		pub fn set_rooms(&mut self, rooms: Vec<Room>) {
+			self.rooms = rooms;
+		}
+
+		pub fn sidebar_ui(&mut self, ui: &mut Ui) {
+			use egui::{RichText, Sense};
+			let sidebar_width = 180.0;
+			let mut open = &mut self.sidebar_open;
+			egui::SidePanel::left("rooms_sidebar")
+				.resizable(false)
+				.min_width(sidebar_width)
+				.show_animated(ui.ctx(), *open, |ui| {
+					ui.vertical_centered(|ui| {
+						ui.heading("Rooms");
+					});
+					ui.separator();
+					for room in &self.rooms {
+						let selected = self.selected_room.as_ref().map_or(false, |id| id == &room.id);
+						let label = if selected {
+							RichText::new(&room.name).strong()
+						} else {
+							RichText::new(&room.name)
+						};
+						let resp = ui.selectable_label(selected, label);
+						if resp.clicked() {
+							self.selected_room = Some(room.id.clone());
+						}
+					}
+				});
+		}
 	pub fn current_timestamp_string() -> String {
 		let now_secs = SystemTime::now()
 			.duration_since(UNIX_EPOCH)
@@ -170,34 +215,39 @@ impl ChatExample {
 	}
 
 	pub fn ui(&mut self, ui: &mut Ui) {
-		// Message reading functionality removed due to build errors.
+		// Sidebar and chat main area
+		egui::TopBottomPanel::top("sidebar_toggle").show_inside(ui, |ui| {
+			if ui.button(if self.sidebar_open { "Hide Rooms" } else { "Show Rooms" }).clicked() {
+				self.sidebar_open = !self.sidebar_open;
+			}
+		});
+		self.sidebar_ui(ui);
+		egui::CentralPanel::default().show_inside(ui, |ui| {
+			ui.vertical(|ui| {
+				// Chat messages area - takes remaining space
+				let available_height = ui.available_height();
+				let input_upward_spacing = 0.0;
+				let input_height = 26.0;
+				let input_margin = 4.0;
+				let extra_scroll_padding = 80.0;
+				let input_panel_height = input_upward_spacing + input_height + input_margin + extra_scroll_padding;
+				let top_padding = 22.0;
+				let messages_area_height = (available_height - input_panel_height - top_padding - 20.0).max(0.0);
 
-		// Use all available height, with input panel at bottom
-		ui.vertical(|ui| {
-			// Chat messages area - takes remaining space
-			let available_height = ui.available_height();
-			let input_upward_spacing = 0.0;
-			let input_height = 26.0;
-			let input_margin = 4.0;
-			let extra_scroll_padding = 80.0;
-			let input_panel_height = input_upward_spacing + input_height + input_margin + extra_scroll_padding;
-			let top_padding = 22.0;
-			let messages_area_height = (available_height - input_panel_height - top_padding - 20.0).max(0.0);
-
-			Frame::NONE
-				.inner_margin(egui::Margin {
-					left: 0,
-					right: 0,
-					top: 22,
-					bottom: 0,
-				})
-				.show(ui, |ui| {
-					ScrollArea::vertical()
-						.animated(false)
-						.auto_shrink([false, false])
-						.stick_to_bottom(true)
-						.max_height(messages_area_height)
-						.show(ui, |ui| {
+				Frame::NONE
+					.inner_margin(egui::Margin {
+						left: 0,
+						right: 0,
+						top: 22,
+						bottom: 0,
+					})
+					.show(ui, |ui| {
+						ScrollArea::vertical()
+							.animated(false)
+							.auto_shrink([false, false])
+							.stick_to_bottom(true)
+							.max_height(messages_area_height)
+							.show(ui, |ui| {
 							let row_width = ui.available_width();
 							let left_margin = 10.0;
 							let right_margin = 10.0;
