@@ -373,163 +373,280 @@ impl ChatExample {
 														ui.add_space(4.0);
 													}
 													Frame::default()
-														.inner_margin(egui::Margin::same(margin as i8))
-														.outer_margin(outer_margin)
-														.fill(msg_color)
-														.corner_radius(rounding)
-														.stroke(egui::Stroke::new(border_width, border_color))
-														.show(ui, |ui| {
-															ui.set_max_width(content_max_width);
-															ui.with_layout(Layout::top_down(Align::Min), |ui| {
-																let header_color = ui.visuals().strong_text_color();
-																let content_color = ui.visuals().weak_text_color();
-																if let Some(from) = &item.from {
-																	if from.starts_with("Ollama ") {
-																		let parts: Vec<&str> = from.splitn(2, ' ').collect();
-																		if parts.len() == 2 {
-																			ui.horizontal(|ui| {
-																				ui.label(egui::RichText::new("Ollama").strong().color(header_color));
-																				ui.label(egui::RichText::new(parts[1]).color(ui.visuals().weak_text_color()));
-																			});
-																		} else {
-																			ui.label(egui::RichText::new(from).strong().color(header_color));
-																		}
-																	} else {
-																		ui.label(egui::RichText::new(from).strong().color(header_color));
-																	}
-																}
-																ui.label(egui::RichText::new(&item.content).color(content_color));
+														// Sidebar and chat main area
+														use crate::ui::overview_chat::store::Store;
+														let mut store = Store::open("metrics/overview_chat.sqlite").expect("Failed to open chat store");
+														egui::TopBottomPanel::top("sidebar_toggle").show_inside(ui, |ui| {
+															if ui.button(if self.sidebar_open { "Hide Rooms" } else { "Show Rooms" }).clicked() {
+																self.sidebar_open = !self.sidebar_open;
+															}
+														});
+														self.sidebar_ui(ui);
+														egui::CentralPanel::default().show_inside(ui, |ui| {
+															ui.vertical(|ui| {
+																// Chat messages area - takes remaining space
+																let available_height = ui.available_height();
+																let input_upward_spacing = 0.0;
+																let input_height = 26.0;
+																let input_margin = 4.0;
+																let extra_scroll_padding = 80.0;
+																let input_panel_height = input_upward_spacing + input_height + input_margin + extra_scroll_padding;
+																let top_padding = 22.0;
+																let messages_area_height = (available_height - input_panel_height - top_padding - 20.0).max(0.0);
+
+																Frame::NONE
+																	.inner_margin(egui::Margin {
+																		left: 0,
+																		right: 0,
+																		top: 22,
+																		bottom: 0,
+																	})
+																	.show(ui, |ui| {
+																		ScrollArea::vertical()
+																			.animated(false)
+																			.auto_shrink([false, false])
+																			.stick_to_bottom(true)
+																			.max_height(messages_area_height)
+																			.show(ui, |ui| {
+																				ui.vertical(|ui| {
+																					ui.set_width(ui.available_width());
+																					let len = self.messages.len();
+																					for (i, item) in self.messages.iter().enumerate() {
+																						ui.allocate_ui_with_layout(
+																							egui::vec2(ui.available_width(), 0.0),
+																							Layout::left_to_right(Align::Min),
+																							|ui| {
+																								ui.spacing_mut().item_spacing.x = 8.0;
+																								let separator_color = ui.visuals().widgets.noninteractive.bg_stroke.color;
+																								Frame::default()
+																									.fill(egui::Color32::TRANSPARENT)
+																									.stroke(egui::Stroke::new(1.0, separator_color))
+																									.corner_radius(4.0)
+																									.inner_margin(egui::Margin::same(6))
+																									.outer_margin(egui::Margin {
+																										left: 12,
+																										right: 0,
+																										top: 0,
+																										bottom: 4,
+																									})
+																									.show(ui, |ui| {
+																										ui.label(
+																											egui::RichText::new(Self::display_time_for_message(item))
+																												.size(12.0)
+																												.color(ui.visuals().strong_text_color()),
+																										);
+																									});
+																								ui.separator();
+																								let messages_middle_width = ui.available_width().max(0.0);
+																								ui.allocate_ui_with_layout(
+																									egui::vec2(messages_middle_width, 0.0),
+																									Layout::top_down(Align::Min),
+																									|ui| {
+																										let max_msg_width =
+																											(messages_middle_width - 10.0 - 10.0).max(0.0);
+																										ui.set_min_width(messages_middle_width);
+																										ui.set_max_width(messages_middle_width);
+																										let layout = Layout::top_down(Align::Min);
+																										ui.with_layout(layout, |ui| {
+																											ui.set_max_width(max_msg_width);
+																											let msg_color = ui.visuals().widgets.noninteractive.bg_fill;
+																											let border_color = match item.from.as_deref() {
+																												Some("Human") => egui::Color32::from_rgb(0, 255, 0),
+																												Some(from) if from.starts_with("Ollama") => {
+																													egui::Color32::from_rgb(255, 255, 0)
+																												}
+																												Some("Agent Evaluator") => egui::Color32::from_rgb(255, 105, 180),
+																												Some("Agent Manager") => egui::Color32::from_rgb(255, 0, 0),
+																												Some("Agent Researcher") => {
+																													egui::Color32::from_rgb(128, 0, 255)
+																												}
+																												Some(from) if from.starts_with("Agent") => {
+																													egui::Color32::from_rgb(255, 255, 0)
+																												}
+																												Some("System") | Some("API") => {
+																													egui::Color32::from_rgb(204, 85, 0)
+																												}
+																												_ => egui::Color32::TRANSPARENT,
+																											};
+																											let border_width = if border_color != egui::Color32::TRANSPARENT {
+																												1.0
+																											} else {
+																												0.0
+																											};
+																											let rounding = 4.0;
+																											let margin = 8.0;
+																											let outer_margin = egui::Margin {
+																												left: 10,
+																												right: 10,
+																												top: 0,
+																												bottom: 4,
+																											};
+																											let content_max_width = max_msg_width - margin * 2.0;
+																											if item.from.as_deref() == Some("Agent Manager") {
+																												ui.add_space(4.0);
+																											}
+																											Frame::default()
+																												.inner_margin(egui::Margin::same(margin as i8))
+																												.outer_margin(outer_margin)
+																												.fill(msg_color)
+																												.corner_radius(rounding)
+																												.stroke(egui::Stroke::new(border_width, border_color))
+																												.show(ui, |ui| {
+																													ui.set_max_width(content_max_width);
+																													ui.with_layout(Layout::top_down(Align::Min), |ui| {
+																														let header_color = ui.visuals().strong_text_color();
+																														let content_color = ui.visuals().weak_text_color();
+																														if let Some(from) = &item.from {
+																															if from.starts_with("Ollama ") {
+																																let parts: Vec<&str> = from.splitn(2, ' ').collect();
+																																if parts.len() == 2 {
+																																	ui.horizontal(|ui| {
+																																		ui.label(egui::RichText::new("Ollama").strong().color(header_color));
+																																		ui.label(egui::RichText::new(parts[1]).color(ui.visuals().weak_text_color()));
+																																	});
+																																} else {
+																																	ui.label(egui::RichText::new(from).strong().color(header_color));
+																																}
+																															} else {
+																																ui.label(egui::RichText::new(from).strong().color(header_color));
+																															}
+																														}
+																														ui.label(egui::RichText::new(&item.content).color(content_color));
+																													});
+																												});
+																										});
+																									},
+																								);
+																							},
+																						);
+																					}
+																					let is_waiting = *self.waiting_for_response.lock().unwrap();
+																					if is_waiting {
+																						ui.add_space(4.0);
+																						ui.horizontal(|ui| {
+																							ui.add_space(70.0 + 10.0);
+																							ui.spinner();
+																						});
+																					}
+																				});
+																		});
+																});
+																ui.add_space(14.0);
+																ui.add_space(-input_upward_spacing);
+																ui.with_layout(Layout::top_down(Align::Center), |ui| {
+																	ui.set_max_width(ui.available_width() * 0.8);
+																	let rounding = 8.0;
+																	ui.add_enabled_ui(self.main_input_enabled, |ui| {
+																		ui.horizontal(|ui| {
+																			let control_height = 26.0;
+																			let available_for_input = ui.available_width() - 80.0;
+																			let input_frame = Frame::NONE
+																				.fill(ui.visuals().widgets.inactive.bg_fill)
+																				.corner_radius(rounding)
+																				.inner_margin(egui::Margin::symmetric(10, 3));
+																			let response = input_frame
+																				.show(ui, |ui| {
+																					ui.set_height(control_height);
+																					ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+																						ui.add_sized(
+																							Vec2::new(available_for_input, control_height),
+																							egui::TextEdit::singleline(&mut self.input_text)
+																								.hint_text("Type a message")
+																								.frame(false),
+																						)
+																					})
+																					.inner
+																				})
+																				.inner;
+																			ui.add_space(2.0);
+																			let button_frame = Frame::NONE
+																				.fill(ui.visuals().widgets.active.bg_fill)
+																				.corner_radius(rounding)
+																				.inner_margin(egui::Margin::symmetric(12, 3));
+																			let send_button_response = button_frame
+																				.show(ui, |ui| {
+																					ui.set_height(control_height);
+																					ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+																						ui.add_sized(
+																							Vec2::new(40.0, control_height),
+																							egui::Button::new("Send").frame(false),
+																						)
+																					})
+																					.inner
+																				})
+																				.inner;
+																			let send_button_clicked = send_button_response.clicked();
+																			let send_clicked = send_button_clicked
+																				|| (response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+																			if send_clicked && !self.input_text.trim().is_empty() {
+																				let message_text = self.input_text.trim().to_string();
+																				self.input_text.clear();
+																				let user_message = ChatMessage {
+																					content: message_text.clone(),
+																					from: Some("Human".to_string()),
+																					correlation: None,
+																					source: MessageSource::Human,
+																					api_auto_respond: false,
+																					assistant_generation: None,
+																				};
+																				let ts = Self::current_timestamp_string();
+																				let persisted = user_message.clone();
+																				self.messages.push(user_message);
+																				self.message_timestamps.push(ts.clone());
+																				self.commit_message(&persisted, &ts);
+																				// Persist to SQLite for the selected room
+																				if let Some(room_id) = &self.selected_room {
+																					let _ = store.append_message(room_id, &persisted, &ts);
+																				}
+																				if let Some(handler) = &self.message_handler {
+																					handler(message_text);
+																				} else {
+																					let tx = self.inbox.sender();
+																					let bot_message = ChatMessage {
+																						content: "Please select a model".to_string(),
+																						from: Some("System".to_string()),
+																						correlation: None,
+																						source: MessageSource::System,
+																						api_auto_respond: false,
+																						assistant_generation: None,
+																					};
+																					tx.send(bot_message).ok();
+																				}
+																			}
+																		});
+																	});
+																	ui.add_space(4.0);
+																	ui.add_enabled_ui(self.main_input_enabled, |ui| {
+																		ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
+																			let plus_button_height = 26.0;
+																			let plus_button_frame = Frame::NONE
+																				.fill(ui.visuals().widgets.inactive.bg_fill)
+																				.corner_radius(rounding)
+																				.inner_margin(egui::Margin::symmetric(12, 3));
+																			let plus_button_response = plus_button_frame
+																				.show(ui, |ui| {
+																					ui.set_height(plus_button_height);
+																					ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+																						ui.add_sized(
+																							Vec2::new(10.0, plus_button_height),
+																							egui::Button::new("+").frame(false),
+																						)
+																					})
+																					.inner
+																				})
+																				.inner;
+																			if plus_button_response.clicked() {
+																				if let Some(path) = rfd::FileDialog::new().pick_file() {
+																					self.picked_file_path = Some(path.display().to_string());
+																					println!("Selected file: {}", self.picked_file_path.as_ref().unwrap());
+																				}
+																			}
+																			if let Some(ref file_path) = self.picked_file_path {
+																				ui.add_space(4.0);
+																				ui.label(egui::RichText::new(format!("File: {}", file_path)).small().weak());
+																			}
+																		});
+																	});
+																});
 															});
 														});
-												});
-											},
-										);
-									},
-								);
-							}
-							let is_waiting = *self.waiting_for_response.lock().unwrap();
-							if is_waiting {
-								ui.add_space(4.0);
-								ui.horizontal(|ui| {
-									ui.add_space(70.0 + left_margin);
-									ui.spinner();
-								});
-							}
-						});
-				});
-				ui.add_space(14.0);
-				ui.add_space(-input_upward_spacing);
-				ui.with_layout(Layout::top_down(Align::Center), |ui| {
-					ui.set_max_width(ui.available_width() * 0.8);
-					let rounding = 8.0;
-					ui.add_enabled_ui(self.main_input_enabled, |ui| {
-						ui.horizontal(|ui| {
-							let control_height = 26.0;
-							let available_for_input = ui.available_width() - 80.0;
-							let input_frame = Frame::NONE
-								.fill(ui.visuals().widgets.inactive.bg_fill)
-								.corner_radius(rounding)
-								.inner_margin(egui::Margin::symmetric(10, 3));
-							let response = input_frame
-								.show(ui, |ui| {
-									ui.set_height(control_height);
-									ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-										ui.add_sized(
-											Vec2::new(available_for_input, control_height),
-											egui::TextEdit::singleline(&mut self.input_text)
-												.hint_text("Type a message")
-												.frame(false),
-										)
-									})
-									.inner
-								})
-								.inner;
-							ui.add_space(2.0);
-							let button_frame = Frame::NONE
-								.fill(ui.visuals().widgets.active.bg_fill)
-								.corner_radius(rounding)
-								.inner_margin(egui::Margin::symmetric(12, 3));
-							let send_button_response = button_frame
-								.show(ui, |ui| {
-									ui.set_height(control_height);
-									ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-										ui.add_sized(
-											Vec2::new(40.0, control_height),
-											egui::Button::new("Send").frame(false),
-										)
-									})
-									.inner
-								})
-								.inner;
-							let send_button_clicked = send_button_response.clicked();
-							let send_clicked = send_button_clicked
-								|| (response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)));
-							if send_clicked && !self.input_text.trim().is_empty() {
-								let message_text = self.input_text.trim().to_string();
-								self.input_text.clear();
-								let user_message = ChatMessage {
-									content: message_text.clone(),
-									from: Some("Human".to_string()),
-									correlation: None,
-									source: MessageSource::Human,
-									api_auto_respond: false,
-									assistant_generation: None,
-								};
-								let ts = Self::current_timestamp_string();
-								let persisted = user_message.clone();
-								self.messages.push(user_message);
-								self.message_timestamps.push(ts.clone());
-								self.commit_message(&persisted, &ts);
-								if let Some(handler) = &self.message_handler {
-									handler(message_text);
-								} else {
-									let tx = self.inbox.sender();
-									let bot_message = ChatMessage {
-										content: "Please select a model".to_string(),
-										from: Some("System".to_string()),
-										correlation: None,
-										source: MessageSource::System,
-										api_auto_respond: false,
-										assistant_generation: None,
-									};
-									tx.send(bot_message).ok();
-								}
-							}
-						});
-					});
-					ui.add_space(4.0);
-					ui.add_enabled_ui(self.main_input_enabled, |ui| {
-						ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
-							let plus_button_height = 26.0;
-							let plus_button_frame = Frame::NONE
-								.fill(ui.visuals().widgets.inactive.bg_fill)
-								.corner_radius(rounding)
-								.inner_margin(egui::Margin::symmetric(12, 3));
-							let plus_button_response = plus_button_frame
-								.show(ui, |ui| {
-									ui.set_height(plus_button_height);
-									ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-										ui.add_sized(
-											Vec2::new(10.0, plus_button_height),
-											egui::Button::new("+").frame(false),
-										)
-									})
-									.inner
-								})
-								.inner;
-							if plus_button_response.clicked() {
-								if let Some(path) = rfd::FileDialog::new().pick_file() {
-									self.picked_file_path = Some(path.display().to_string());
-									println!("Selected file: {}", self.picked_file_path.as_ref().unwrap());
-								}
-							}
-							if let Some(ref file_path) = self.picked_file_path {
-								ui.add_space(4.0);
-								ui.label(egui::RichText::new(format!("File: {}", file_path)).small().weak());
-							}
-						});
-					});
-				});
-		});
-	}
-}
