@@ -56,12 +56,24 @@ impl Default for PythonPanelUiState {
 	}
 }
 
-#[derive(Default)]
 pub(crate) struct AMSAgentsUiState {
 	pub(crate) ollama: OllamaUiState,
 	pub(crate) agents_workspace_path: String,
 	pub(crate) manifest_status_message: String,
 	pub(crate) python: PythonPanelUiState,
+	pub(crate) inbox_messages: Vec<String>,
+}
+
+impl Default for AMSAgentsUiState {
+	fn default() -> Self {
+		Self {
+			ollama: OllamaUiState::default(),
+			agents_workspace_path: String::new(),
+			manifest_status_message: String::new(),
+			python: PythonPanelUiState::default(),
+			inbox_messages: vec!["Welcome to your inbox!".to_string()],
+		}
+	}
 }
 
 fn prepare_shell(

@@ -4,7 +4,7 @@ use std::sync::atomic::Ordering;
 
 use eframe::egui;
 use egui_phosphor::regular;
-use egui_inbox::{Inbox, Message};
+// Removed egui_inbox due to version conflict. Use Vec<String> for inbox messages.
 
 use crate::agents::AMSAgents;
 use crate::agents::nodes_panel::{
@@ -126,17 +126,18 @@ impl AMSAgents {
                                                     ui.label("Left bar");
                                                 });
                                             });
-                                        // Right area with inbox
+                                        // Right area with inbox from ui_state
                                         egui::Frame::default()
                                             .stroke(egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color))
                                             .show(ui, |ui| {
                                                 ui.set_width(ui.available_width());
                                                 ui.set_height(ui.available_height());
-                                                // Example inbox
-                                                let mut inbox = Inbox::default();
-                                                inbox.push(Message::new("Welcome to your inbox!"));
-                                                inbox.push(Message::new("This is a test message."));
-                                                egui_inbox::inbox_ui(ui, &mut inbox);
+                                                if ui.button("Send test message").clicked() {
+                                                    ui_state.inbox_messages.push("Hello from simple inbox!".to_string());
+                                                }
+                                                for msg in &ui_state.inbox_messages {
+                                                    ui.label(format!("Inbox: {}", msg));
+                                                }
                                             });
                                     },
                                 );
@@ -177,35 +178,7 @@ impl AMSAgents {
                                     );
                                 }
                             });
-                        if ui
-                            .add_enabled(!self.read_only_replay_mode, egui::Button::new("Add"))
-                            .clicked()
-                        {
-                            let mut node = match self.nodes_panel.selected_add_kind {
-                                AgentNodeKind::Manager => NodeData::new_manager(),
-                                AgentNodeKind::Worker => NodeData::new_worker(),
-                                AgentNodeKind::Evaluator => NodeData::new_evaluator(),
-                                AgentNodeKind::Researcher => NodeData::new_researcher(),
-                                AgentNodeKind::Topic => NodeData::new_topic(),
-                            };
-                            node.set_name(BasicNodeViewer::numbered_name_for_kind(
-                                &self.nodes_panel.agents,
-                                self.nodes_panel.selected_add_kind,
-                            ));
-                            self.nodes_panel
-                                .push_agent(egui::pos2(0.0, 0.0), node);
-                        }
-                        if self.read_only_replay_mode {
-                            ui.add_space(8.0);
-                            ui.label(egui::RichText::new("Replay mode (read-only)").weak());
-                        }
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("File:");
-                        ui.add(
-                            egui::TextEdit::singleline(&mut ui_state.agents_workspace_path)
-                                .desired_width(280.0),
-                        );
+
                         if ui.button("Load").clicked() {
                             let path = PathBuf::from(ui_state.agents_workspace_path.trim());
                             match self.load_agents_workspace_from_path(path) {
@@ -226,6 +199,7 @@ impl AMSAgents {
                                 }
                             }
                         }
+
                         let (start_stop_label, start_stop_hover) =
                             if self
                                 .conversation_graph_running
