@@ -105,7 +105,38 @@ impl AMSAgents {
                     ui.separator();
 
                     if self.nodes_panel.active_tab == PanelTab::Overview {
-                        ui.label("Lorem ipsum");
+                        // Parent frame occupying available height
+                        egui::Frame::default()
+                            .fill(ui.visuals().panel_fill)
+                            .stroke(egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color))
+                            .show(ui, |ui| {
+                                ui.allocate_ui_with_layout(
+                                    egui::vec2(ui.available_width(), ui.available_height()),
+                                    egui::Layout::left_to_right(egui::Align::Min),
+                                    |ui| {
+                                        // Left bar
+                                        egui::Frame::default()
+                                            .stroke(egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color))
+                                            .show(ui, |ui| {
+                                                ui.set_width(140.0);
+                                                ui.set_height(ui.available_height());
+                                                ui.vertical_centered(|ui| {
+                                                    ui.label("Left bar");
+                                                });
+                                            });
+                                        // Right area
+                                        egui::Frame::default()
+                                            .stroke(egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color))
+                                            .show(ui, |ui| {
+                                                ui.set_width(ui.available_width());
+                                                ui.set_height(ui.available_height());
+                                                ui.vertical_centered(|ui| {
+                                                    ui.label("Right area");
+                                                });
+                                            });
+                                    },
+                                );
+                            });
                         return;
                     }
                     if self.nodes_panel.active_tab == PanelTab::Ollama {

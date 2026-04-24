@@ -52,11 +52,9 @@ impl AMSAgents {
         }
 
         egui::ScrollArea::vertical().show(ui, |ui| {
-            ui.add_space(4.0);
 
-            // ── No active runtime → creation form ────────────────────────
             if panel.active_runtime.is_none() {
-                ui.label(egui::RichText::new("New Python Environment").strong());
+                ui.label(egui::RichText::new("New Python Environment").strong().size(16.0));
                 ui.separator();
                 ui.add_space(4.0);
 
