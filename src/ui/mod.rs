@@ -61,7 +61,8 @@ pub(crate) struct AMSAgentsUiState {
 	pub(crate) agents_workspace_path: String,
 	pub(crate) manifest_status_message: String,
 	pub(crate) python: PythonPanelUiState,
-	pub(crate) inbox_messages: Vec<String>,
+	pub(crate) inbox_messages: Vec<(String, String)>, // (timestamp, message)
+	pub(crate) inbox_input: String,
 }
 
 impl Default for AMSAgentsUiState {
@@ -71,7 +72,11 @@ impl Default for AMSAgentsUiState {
 			agents_workspace_path: String::new(),
 			manifest_status_message: String::new(),
 			python: PythonPanelUiState::default(),
-			inbox_messages: vec!["Welcome to your inbox!".to_string()],
+			inbox_messages: vec![(
+				chrono::Local::now().format("%H:%M:%S").to_string(),
+				"Welcome to your inbox!".to_string(),
+			)],
+			inbox_input: String::new(),
 		}
 	}
 }
