@@ -85,6 +85,7 @@ pub struct ChatExample {
     pub rooms: Vec<Room>,
     pub sidebar_open: bool,
     pub selected_room: Option<String>,
+    pub room_mode_human_agent: bool,
 }
 
 impl Default for ChatExample {
@@ -119,46 +120,83 @@ impl ChatExample {
             Err(_) => return,
         };
 
-        if ui.button("New room").clicked() {
-            let name = format!("Room {}", self.rooms.len() + 1);
-            self.add_room(name, &mut store);
-        }
+        let rooms_section_height = ui.available_height().min(200.0).max(0.0);
+        ui.allocate_ui_with_layout(
+            egui::vec2(ui.available_width(), rooms_section_height),
+            egui::Layout::top_down(egui::Align::Min),
+            |ui| {
 
+				ui.label("Interaction Mode");
+
+                ui.horizontal(|ui| {
+                    if ui
+                        .selectable_label(self.room_mode_human_agent, "Human-Agent")
+                        .clicked()
+                    {
+                        self.room_mode_human_agent = true;
+                    }
+                    if ui
+                        .selectable_label(!self.room_mode_human_agent, "Agent-Agent")
+                        .clicked()
+                    {
+                        self.room_mode_human_agent = false;
+                    }
+                });
+
+                ui.separator();
+                ui.label("Room Settings");
+
+                if ui.button("New room").clicked() {
+                    let name = format!("Room {}", self.rooms.len() + 1);
+                    self.add_room(name, &mut store);
+                }
+
+                ui.separator();
+                ui.spacing_mut().item_spacing.y = 2.0;
+
+                let mut delete_room_id: Option<String> = None;
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    for room in &self.rooms {
+                        let selected = self
+                            .selected_room
+                            .as_ref()
+                            .map_or(false, |id| id == &room.id);
+                        ui.horizontal(|ui| {
+                            let row_height = ui.spacing().interact_size.y;
+                            let x_width = row_height;
+                            let selectable_width =
+                                (ui.available_width() - x_width - ui.spacing().item_spacing.x)
+                                    .max(0.0);
+                            let label = egui::Button::new(&room.name).selected(selected);
+                            if ui
+                                .add_sized(egui::vec2(selectable_width, row_height), label)
+                                .clicked()
+                            {
+                                self.selected_room = Some(room.id.clone());
+                            }
+                            if ui
+                                .add_sized(egui::vec2(x_width, row_height), egui::Button::new("x"))
+                                .on_hover_text("Delete room")
+                                .clicked()
+                            {
+                                delete_room_id = Some(room.id.clone());
+                            }
+                        });
+                    }
+                });
+
+                if let Some(id) = delete_room_id {
+                    self.rooms.retain(|r| r.id != id);
+                    let _ = store.delete_conversation(&id);
+                    if self.selected_room.as_deref() == Some(id.as_str()) {
+                        self.selected_room = self.rooms.first().map(|r| r.id.clone());
+                    }
+                }
+            },
+        );
+
+        // Separator between the constrained room section and any future sidebar widgets.
         ui.separator();
-        let mut delete_room_id: Option<String> = None;
-        for room in &self.rooms {
-            let selected = self
-                .selected_room
-                .as_ref()
-                .map_or(false, |id| id == &room.id);
-            ui.horizontal(|ui| {
-                let row_height = 24.0;
-                let selectable_width =
-                    (ui.available_width() - 20.0 - ui.spacing().item_spacing.x).max(0.0);
-                let label = egui::Button::new(&room.name).selected(selected);
-                if ui
-                    .add_sized(egui::vec2(selectable_width, row_height), label)
-                    .clicked()
-                {
-                    self.selected_room = Some(room.id.clone());
-                }
-                if ui
-                    .add_sized(egui::vec2(20.0, row_height), egui::Button::new("x"))
-                    .on_hover_text("Delete room")
-                    .clicked()
-                {
-                    delete_room_id = Some(room.id.clone());
-                }
-            });
-        }
-
-        if let Some(id) = delete_room_id {
-            self.rooms.retain(|r| r.id != id);
-            let _ = store.delete_conversation(&id);
-            if self.selected_room.as_deref() == Some(id.as_str()) {
-                self.selected_room = self.rooms.first().map(|r| r.id.clone());
-            }
-        }
     }
 
     pub fn current_timestamp_string() -> String {
@@ -212,6 +250,7 @@ impl ChatExample {
             rooms: Vec::new(),
             sidebar_open: true,
             selected_room: None,
+            room_mode_human_agent: true,
         }
     }
 
@@ -331,7 +370,7 @@ impl ChatExample {
                 ui.add_enabled_ui(self.main_input_enabled, |ui| {
                     ui.horizontal(|ui| {
                         let response = ui.add_sized(
-                            Vec2::new((ui.available_width() - 120.0).max(120.0), 26.0),
+                            Vec2::new(400.0, 26.0),
                             egui::TextEdit::singleline(&mut self.input_text).hint_text("Type a message"),
                         );
                         let send_button = ui.add_sized(Vec2::new(52.0, 26.0), egui::Button::new("Send"));

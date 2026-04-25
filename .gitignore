@@ -13,6 +13,8 @@ timings.jsonl
 
 overview_chat_audit.jsonl
 overview_chat.sqlite
+metrics/overview_chat_audit.jsonl
+metrics/overview_chat.sqlite
 
 
 exp_*/

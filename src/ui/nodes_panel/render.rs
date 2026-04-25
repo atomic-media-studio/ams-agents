@@ -189,6 +189,8 @@ impl AMSAgents {
                                         .stroke(egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color))
                                         .inner_margin(egui::Margin::same(0))
                                         .show(ui, |ui| {
+                                            ui.set_min_height(row_height);
+                                            ui.set_height(row_height);
                                             chat.sidebar_ui(ui);
                                         });
                                 },
@@ -271,7 +273,7 @@ impl AMSAgents {
                                     let response = ui.add(
                                         egui::TextEdit::singleline(&mut chat.input_text)
                                             .hint_text("Type a message")
-                                            .desired_width((ui.available_width() - 60.0).max(140.0)),
+                                            .desired_width(300.0),
                                     );
                                     let send_clicked = ui
                                         .add(egui::Button::new("Send"))
