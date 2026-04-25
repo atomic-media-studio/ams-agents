@@ -92,12 +92,14 @@ pub async fn start_conversation_loop(
     agent_a_instruction: String,
     agent_a_topic: String,
     agent_a_topic_source: String,
+    agent_a_manager_name: String,
     agent_a_global_id: String,
     agent_b_id: usize,
     agent_b_name: String,
     agent_b_instruction: String,
     agent_b_topic: String,
     agent_b_topic_source: String,
+    agent_b_manager_name: String,
     agent_b_global_id: String,
     ollama_host: String,
     endpoint: String,
@@ -113,19 +115,30 @@ pub async fn start_conversation_loop(
     conversation_graph_running: Arc<AtomicBool>,
     ledger: Option<Arc<EventLedger>>,
     app_state: Arc<AppState>,
+    chat_turn_tx: Option<std::sync::mpsc::Sender<crate::agents::AgentChatEvent>>,
+    chat_room_id: Option<String>,
 ) {
     let mut turn = 0;
     let mut is_agent_a_turn = true;
     let mut history = ConversationHistory::new(history_size.max(1));
     let mut turn_tracker = TurnTracker::default();
+    let conversation_manager_name = if agent_a_manager_name == agent_b_manager_name {
+        agent_a_manager_name.clone()
+    } else {
+        format!("{} + {}", agent_a_manager_name, agent_b_manager_name)
+    };
     let topics_summary = format!(
         "Topics => {}: \"{}\" | {}: \"{}\"",
         agent_a_name, agent_a_topic, agent_b_name, agent_b_topic,
     );
+    let topics_readable = format!(
+        "Topics:\n- {}: {}\n- {}: {}",
+        agent_a_name, agent_a_topic, agent_b_name, agent_b_topic,
+    );
 
     let start_message = format!(
-        "Conversation Started: {} ↔ {}\n{}",
-        agent_a_name, agent_b_name, topics_summary
+        "Conversation started\nManager: {}\nPair: {} ↔ {}\n{}",
+        conversation_manager_name, agent_a_name, agent_b_name, topics_readable
     );
     println!("\n{}", start_message);
 
@@ -143,7 +156,7 @@ pub async fn start_conversation_loop(
     if let Err(e) = crate::web::send_conversation_message(
         &endpoint,
         0,
-        "Agent Manager",
+        &conversation_manager_name,
         0,
         "System",
         &topics_summary,
@@ -154,6 +167,14 @@ pub async fn start_conversation_loop(
     .await
     {
         eprintln!("[HTTP] Failed to send conversation start message: {}", e);
+    }
+
+    if let (Some(tx), Some(room_id)) = (&chat_turn_tx, &chat_room_id) {
+        let _ = tx.send(crate::agents::AgentChatEvent {
+            from: conversation_manager_name.clone(),
+            content: format!("{}: {}", conversation_manager_name, start_message),
+            room_id: room_id.clone(),
+        });
     }
 
     loop {
@@ -204,6 +225,11 @@ pub async fn start_conversation_loop(
         } else {
             sender_topic.clone()
         };
+        let manager_name = if is_agent_a_turn {
+            agent_a_manager_name.clone()
+        } else {
+            agent_b_manager_name.clone()
+        };
 
         // Pre-turn: ground on the tied worker's last line when it exists; else partner line (first turn).
         let research_injection = if let Some((line, grounding)) = history
@@ -238,9 +264,20 @@ pub async fn start_conversation_loop(
             String::new()
         };
 
+        let manager_step_directive = format!(
+            "Step {} directive from {}: Respond only as {} to {} about \"{}\". Stay on-topic and do not switch to unrelated domains.",
+            turn + 1,
+            manager_name,
+            sender_name,
+            receiver_name,
+            effective_topic
+        );
         let enhanced_instruction = format!(
-            "{}\n\nYou are now in a conversation with {} about \"{}\". Keep your responses concise and engaging (2-3 sentences preferred).",
-            sender_instruction, receiver_name, effective_topic
+            "{}\n\n{}\n\nYou are now in a conversation with {} about \"{}\". Keep your responses concise and engaging (2-3 sentences preferred). Respond as yourself only, and do not write dialogue for other agents or add speaker labels.",
+            sender_instruction,
+            manager_step_directive,
+            receiver_name,
+            effective_topic
         );
 
         let conversation_context =
@@ -266,8 +303,23 @@ pub async fn start_conversation_loop(
             gap_ms: turn_tracker.current_gap_ms(),
         });
 
-        let turn_message = format!("Turn {}: {} -> {}", turn + 1, sender_name, receiver_name);
+        let turn_message = format!(
+            "Step {}: {} says next speaker is {} replying to {} about \"{}\".",
+            turn + 1,
+            manager_name,
+            sender_name,
+            receiver_name,
+            effective_topic
+        );
         println!("{}", turn_message);
+
+        if let (Some(tx), Some(room_id)) = (&chat_turn_tx, &chat_room_id) {
+            let _ = tx.send(crate::agents::AgentChatEvent {
+                from: manager_name.clone(),
+                content: format!("{}: {}", manager_name, turn_message),
+                room_id: room_id.clone(),
+            });
+        }
 
         let endpoint_clone = endpoint.clone();
         let topic_clone = effective_topic.clone();
@@ -340,6 +392,15 @@ pub async fn start_conversation_loop(
                 println!("\n[{}]: {}", sender_name, response);
                 println!();
 
+                // Forward the completed turn to the overview chat room.
+                if let (Some(tx), Some(room_id)) = (&chat_turn_tx, &chat_room_id) {
+                    let _ = tx.send(crate::agents::AgentChatEvent {
+                        from: sender_name.clone(),
+                        content: format!("{}: {}", sender_name, response),
+                        room_id: room_id.clone(),
+                    });
+                }
+
                 let message_for_chat = if research_injection.is_empty() {
                     response.clone()
                 } else {
@@ -365,7 +426,7 @@ pub async fn start_conversation_loop(
                     eprintln!("[HTTP] Failed to send message: {}", e);
                 }
 
-                if run_evaluator_sidecars_for_message(
+                let evaluator_outputs = match run_evaluator_sidecars_for_message(
                     sidecars.as_ref(),
                     &response,
                     ollama_host.as_str(),
@@ -378,9 +439,19 @@ pub async fn start_conversation_loop(
                     app_state.clone(),
                 )
                 .await
-                .is_err()
                 {
-                    break;
+                    Ok(outputs) => outputs,
+                    Err(()) => break,
+                };
+
+                if let (Some(tx), Some(room_id)) = (&chat_turn_tx, &chat_room_id) {
+                    for ev_out in evaluator_outputs {
+                        let _ = tx.send(crate::agents::AgentChatEvent {
+                            from: "Agent Evaluator".to_string(),
+                            content: format!("Agent Evaluator: {}", ev_out),
+                            room_id: room_id.clone(),
+                        });
+                    }
                 }
 
                 turn_tracker.mark_turn_completed();
@@ -433,7 +504,7 @@ pub async fn start_conversation_loop(
     if let Err(e) = crate::web::send_conversation_message(
         &endpoint,
         0,
-        "Agent Manager",
+        &conversation_manager_name,
         0,
         "System",
         &topics_summary,
@@ -444,6 +515,14 @@ pub async fn start_conversation_loop(
     .await
     {
         eprintln!("[HTTP] Failed to send conversation end message: {}", e);
+    }
+
+    if let (Some(tx), Some(room_id)) = (&chat_turn_tx, &chat_room_id) {
+        let _ = tx.send(crate::agents::AgentChatEvent {
+            from: conversation_manager_name.clone(),
+            content: format!("{}: {}", conversation_manager_name, end_message),
+            room_id: room_id.clone(),
+        });
     }
 
     let prev_remaining = loops_remaining_in_run.fetch_sub(1, Ordering::SeqCst);

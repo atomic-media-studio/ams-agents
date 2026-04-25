@@ -7,6 +7,13 @@ use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex};
 use tokio::runtime::Handle;
 
+/// A completed agent dialogue turn forwarded to the overview chat room.
+pub struct AgentChatEvent {
+    pub from: String,
+    pub content: String,
+    pub room_id: String,
+}
+
 pub mod agent_conversation_loop;
 pub mod conversation_sidecars;
 pub(crate) mod nodes_panel;
@@ -47,6 +54,12 @@ pub struct AMSAgents {
     /// Bumped on each `run_graph`; stale conversation tasks ignore completion.
     conversation_run_generation: Arc<AtomicU64>,
     pub(crate) nodes_panel: nodes_panel::NodesPanelState,
+    /// Sender half of the agent→chat channel; cloned into each conversation loop.
+    pub(crate) chat_turn_tx: Option<std::sync::mpsc::Sender<AgentChatEvent>>,
+    /// Receiver half drained every Overview frame to push agent turns into the chat UI.
+    pub(crate) chat_turn_rx: Option<std::sync::mpsc::Receiver<AgentChatEvent>>,
+    /// The room ID that was active when the last run started; agent turns are posted there.
+    pub(crate) chat_active_room_id: Option<String>,
 }
 
 impl AMSAgents {
@@ -89,6 +102,9 @@ impl AMSAgents {
             conversation_graph_running: Arc::new(AtomicBool::new(false)),
             conversation_run_generation: Arc::new(AtomicU64::new(0)),
             nodes_panel: nodes_panel::NodesPanelState::default(),
+            chat_turn_tx: None,
+            chat_turn_rx: None,
+            chat_active_room_id: None,
         }
     }
 

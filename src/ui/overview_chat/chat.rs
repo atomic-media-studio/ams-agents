@@ -302,13 +302,6 @@ impl ChatExample {
             .collect()
     }
 
-    // Retained for future room-level reset actions from the sidebar.
-    #[allow(dead_code)]
-    pub fn clear_messages(&mut self) {
-        self.messages.clear();
-        self.message_timestamps.clear();
-    }
-
     pub fn reset_to_welcome(&mut self) {
         let (w, t) = Self::default_welcome();
         self.messages = vec![w];

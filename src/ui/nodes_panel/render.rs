@@ -4,7 +4,6 @@ use std::sync::atomic::Ordering;
 
 use eframe::egui;
 use egui_phosphor::regular;
-// Removed egui_inbox due to version conflict. Use Vec<String> for inbox messages.
 
 use crate::agents::AMSAgents;
 use crate::agents::nodes_panel::{
@@ -17,11 +16,6 @@ use crate::ui::AMSAgentsUiState;
 pub(super) struct BasicNodeViewer;
 
 impl BasicNodeViewer {
-    // pub(super) fn numbered_name_for_kind(agents: &[AgentRecord], kind: AgentNodeKind) -> String {
-    //     let idx = agents.iter().filter(|a| a.data.kind == kind).count() + 1;
-    //     format!("{} {}", kind.label(), idx)
-    // }
-
     pub(super) fn show_body(&mut self, id: usize, ui: &mut egui::Ui, agents: &mut [AgentRecord]) {
         super::body::show_node_body(id, ui, agents);
     }
@@ -106,14 +100,17 @@ impl AMSAgents {
                     });
                     ui.separator();
 
-                    
+                    // Statics hoisted here so both Overview and Workspace branches can access them.
+                    use crate::ui::overview_chat::chat::{ChatExample, ChatMessage};
+                    use std::sync::{Mutex, OnceLock};
+                    static CHAT: OnceLock<Mutex<ChatExample>> = OnceLock::new();
+                    static ACTIVE_ROOM_ID: OnceLock<Mutex<Option<String>>> = OnceLock::new();
 
                     if self.nodes_panel.active_tab == PanelTab::Overview {
-                        use crate::ui::overview_chat::chat::{ChatExample, ChatMessage, Room};
+                        use crate::ui::overview_chat::chat::Room;
                         use crate::ui::overview_chat::incoming::MessageSource;
                         use crate::ui::overview_chat::store::Store;
                         use std::path::PathBuf;
-                        use std::sync::{Mutex, OnceLock};
                         // Static path for demonstration; in real app, make this configurable
                         let db_path = PathBuf::from("metrics/overview_chat.sqlite");
                         let store = match Store::open(db_path) {
@@ -172,8 +169,6 @@ impl AMSAgents {
                         }
 
                         // Static ChatExample for demonstration; in real app, store in ui_state
-                        static CHAT: OnceLock<Mutex<ChatExample>> = OnceLock::new();
-                        static ACTIVE_ROOM_ID: OnceLock<Mutex<Option<String>>> = OnceLock::new();
                         let chat = CHAT.get_or_init(|| Mutex::new(ChatExample::new()));
                         let active_room_id = ACTIVE_ROOM_ID.get_or_init(|| Mutex::new(None));
                         let mut chat = chat.lock().unwrap();
@@ -181,6 +176,28 @@ impl AMSAgents {
                             let ts = ChatExample::display_time_for_message(&item);
                             chat.message_timestamps.push(ts);
                             chat.messages.push(item);
+                        }
+
+                        // Drain agent turns forwarded from running conversation loops.
+                        if let Some(rx) = &self.chat_turn_rx {
+                            while let Ok(event) = rx.try_recv() {
+                                let msg = ChatMessage {
+                                    content: event.content.clone(),
+                                    from: Some(event.from.clone()),
+                                    correlation: None,
+                                    source: MessageSource::Api,
+                                    api_auto_respond: false,
+                                    assistant_generation: None,
+                                };
+                                let ts = ChatExample::display_time_for_message(&msg);
+                                if let Err(e) = store.append_message(&event.room_id, &msg, &ts) {
+                                    eprintln!("[Chat] Failed to persist agent turn: {e}");
+                                }
+                                if chat.selected_room.as_deref() == Some(event.room_id.as_str()) {
+                                    chat.message_timestamps.push(ts);
+                                    chat.messages.push(msg);
+                                }
+                            }
                         }
                         chat.set_rooms(rooms.clone());
                         if chat.selected_room.is_none() {
@@ -306,32 +323,53 @@ impl AMSAgents {
                                                                 ui.vertical(|ui| {
                                                                     ui.set_width(ui.available_width());
                                                                     let len = chat.messages.len();
+                                                                    let time_col_width = 82.0;
                                                                     for (i, msg) in chat.messages.iter().enumerate() {
-                                                                        ui.horizontal(|ui| {
-                                                                            // Timestamp bubble
-                                                                            egui::Frame::new()
-                                                                                .fill(ui.visuals().widgets.inactive.bg_fill)
-                                                                                .stroke(egui::Stroke::new(0.5, ui.visuals().widgets.noninteractive.bg_stroke.color))
-                                                                                .corner_radius(egui::CornerRadius::same(6))
-                                                                                .inner_margin(egui::Margin::symmetric(6, 2))
-                                                                                .show(ui, |ui| {
-                                                                                    let ts = chat
-                                                                                        .message_timestamps
-                                                                                        .get(i)
-                                                                                        .cloned()
-                                                                                        .unwrap_or_else(|| "--:--:--".to_string());
-                                                                                    ui.label(ts);
-                                                                                });
-                                                                            // Message bubble
-                                                                            egui::Frame::new()
-                                                                                .fill(ui.visuals().extreme_bg_color)
-                                                                                .stroke(egui::Stroke::new(0.5, ui.visuals().widgets.noninteractive.bg_stroke.color))
-                                                                                .corner_radius(egui::CornerRadius::same(6))
-                                                                                .inner_margin(egui::Margin::symmetric(8, 4))
-                                                                                .show(ui, |ui| {
-                                                                                    ui.label(&msg.content);
-                                                                                });
-                                                                        });
+                                                                        ui.allocate_ui_with_layout(
+                                                                            egui::vec2(ui.available_width(), 0.0),
+                                                                            egui::Layout::left_to_right(egui::Align::Min),
+                                                                            |ui| {
+                                                                                // Fixed left column for timestamps.
+                                                                                ui.allocate_ui_with_layout(
+                                                                                    egui::vec2(time_col_width, 0.0),
+                                                                                    egui::Layout::top_down(egui::Align::Min),
+                                                                                    |ui| {
+                                                                                        egui::Frame::new()
+                                                                                            .fill(ui.visuals().widgets.inactive.bg_fill)
+                                                                                            .stroke(egui::Stroke::new(0.5, ui.visuals().widgets.noninteractive.bg_stroke.color))
+                                                                                            .corner_radius(egui::CornerRadius::same(6))
+                                                                                            .inner_margin(egui::Margin::symmetric(6, 2))
+                                                                                            .show(ui, |ui| {
+                                                                                                let ts = chat
+                                                                                                    .message_timestamps
+                                                                                                    .get(i)
+                                                                                                    .cloned()
+                                                                                                    .unwrap_or_else(|| "--:--:--".to_string());
+                                                                                                ui.label(ts);
+                                                                                            });
+                                                                                    },
+                                                                                );
+
+                                                                                let msg_width = (ui.available_width() - ui.spacing().item_spacing.x)
+                                                                                    .max(0.0);
+                                                                                ui.allocate_ui_with_layout(
+                                                                                    egui::vec2(msg_width, 0.0),
+                                                                                    egui::Layout::top_down(egui::Align::Min),
+                                                                                    |ui| {
+                                                                                        // Message bubble — wraps to available width.
+                                                                                        egui::Frame::new()
+                                                                                            .fill(ui.visuals().extreme_bg_color)
+                                                                                            .stroke(egui::Stroke::new(0.5, ui.visuals().widgets.noninteractive.bg_stroke.color))
+                                                                                            .corner_radius(egui::CornerRadius::same(6))
+                                                                                            .inner_margin(egui::Margin::symmetric(8, 4))
+                                                                                            .show(ui, |ui| {
+                                                                                                ui.set_max_width(ui.available_width());
+                                                                                                ui.add(egui::Label::new(&msg.content).wrap());
+                                                                                            });
+                                                                                    },
+                                                                                );
+                                                                            },
+                                                                        );
                                                                         if i + 1 < len {
                                                                             ui.add_space(4.0);
                                                                         }
@@ -468,6 +506,12 @@ impl AMSAgents {
                             {
                                 self.stop_graph();
                             } else {
+                                // Snapshot the currently selected chat room so agent turns
+                                // are routed to the room that was open when Start was pressed.
+                                self.chat_active_room_id = CHAT
+                                    .get()
+                                    .and_then(|c| c.lock().ok())
+                                    .and_then(|c| c.selected_room.clone());
                                 ui_state.manifest_status_message = self.run_graph();
                             }
                         }

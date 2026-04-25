@@ -316,9 +316,11 @@ pub async fn run_evaluator_sidecars_for_message(
     post_http: bool,
     ledger: Option<&Arc<EventLedger>>,
     app_state: Arc<AppState>,
-) -> Result<(), ()> {
+) -> Result<Vec<String>, ()> {
     let experiment_id = run_context.map(|r| r.experiment_id.clone());
     let run_id = run_context.map(|r| r.run_id.clone());
+
+    let mut evaluator_outputs = Vec::new();
 
     for ev in &sidecars.evaluators {
         let ollama_input = format!("{}\n{}", ev.instruction, agent_message);
@@ -366,6 +368,7 @@ pub async fn run_evaluator_sidecars_for_message(
                         eprintln!("[Evaluator] Failed to send to ams-chat: {}", e);
                     }
                 }
+                evaluator_outputs.push(response);
             }
             Err(e) => {
                 if e.to_string() == crate::ollama::OLLAMA_STOPPED_MSG {
@@ -390,7 +393,7 @@ pub async fn run_evaluator_sidecars_for_message(
         }
     }
 
-    Ok(())
+    Ok(evaluator_outputs)
 }
 
 #[cfg(test)]

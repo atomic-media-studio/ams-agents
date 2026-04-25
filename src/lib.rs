@@ -1,3 +1,5 @@
+#![doc = include_str!("../docs/README.md")]
+
 pub mod app_state;
 pub mod agents;
 pub mod metrics;

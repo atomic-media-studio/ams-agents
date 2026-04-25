@@ -38,6 +38,10 @@ impl AMSAgents {
     pub(crate) fn run_graph(&mut self) -> String {
         // Bulletproof behavior: re-run means stop existing graph processes first.
         self.stop_graph();
+        // Create a fresh agent→chat channel for this run.
+        let (chat_tx, chat_rx) = std::sync::mpsc::channel::<crate::agents::AgentChatEvent>();
+        self.chat_turn_tx = Some(chat_tx);
+        self.chat_turn_rx = Some(chat_rx);
         self.last_evaluated_message_by_evaluator
             .lock()
             .unwrap()
@@ -109,6 +113,7 @@ impl AMSAgents {
             instruction: String,
             topic: String,
             topic_source: String,
+            manager_name: String,
         }
 
         let mut eligible: Vec<EligibleWorker> = self
@@ -118,12 +123,29 @@ impl AMSAgents {
             .filter_map(|r| {
                 if let NodePayload::Worker(w) = &r.data.payload {
                     if !w.conversation_topic.trim().is_empty() {
+                        let manager_name = w
+                            .manager_node
+                            .and_then(|manager_id| {
+                                self.nodes_panel
+                                    .agents
+                                    .iter()
+                                    .find(|m| m.id == manager_id)
+                                    .and_then(|m| {
+                                        if let NodePayload::Manager(md) = &m.data.payload {
+                                            Some(md.name.clone())
+                                        } else {
+                                            None
+                                        }
+                                    })
+                            })
+                            .unwrap_or_else(|| "Agent Manager".to_string());
                         return Some(EligibleWorker {
                             id: r.id,
                             name: w.name.clone(),
                             instruction: w.instruction.clone(),
                             topic: w.conversation_topic.clone(),
                             topic_source: w.conversation_topic_source.clone(),
+                            manager_name,
                         });
                     }
                 }
@@ -214,11 +236,13 @@ impl AMSAgents {
                     a.instruction.clone(),
                     a.topic.clone(),
                     a.topic_source.clone(),
+                    a.manager_name.clone(),
                     b.id,
                     b.name.clone(),
                     b.instruction.clone(),
                     b.topic.clone(),
                     b.topic_source.clone(),
+                    b.manager_name.clone(),
                 );
                 i += 2;
             } else {
@@ -266,11 +290,13 @@ impl AMSAgents {
                     a.instruction.clone(),
                     a.topic.clone(),
                     a.topic_source.clone(),
+                    a.manager_name.clone(),
                     a.id,
                     a.name.clone(),
                     a.instruction.clone(),
                     a.topic.clone(),
                     a.topic_source.clone(),
+                    a.manager_name.clone(),
                 );
                 i += 1;
             }
@@ -302,11 +328,13 @@ impl AMSAgents {
         agent_a_instruction: String,
         agent_a_topic: String,
         agent_a_topic_source: String,
+        agent_a_manager_name: String,
         agent_b_id: usize,
         agent_b_name: String,
         agent_b_instruction: String,
         agent_b_topic: String,
         agent_b_topic_source: String,
+        agent_b_manager_name: String,
     ) {
         let agent_a_id = agent_a_node_id;
         let active_flag = Arc::new(Mutex::new(true));
@@ -356,6 +384,8 @@ impl AMSAgents {
             .unwrap_or_default();
         let ledger = self.event_ledger.clone();
         let app_state = self.app_state.clone();
+        let chat_tx = self.chat_turn_tx.clone();
+        let chat_room_id = self.chat_active_room_id.clone();
 
         let loop_handle = handle.spawn(async move {
             crate::agents::agent_conversation_loop::start_conversation_loop(
@@ -367,12 +397,14 @@ impl AMSAgents {
                 agent_a_instruction,
                 agent_a_topic,
                 agent_a_topic_source,
+                agent_a_manager_name,
                 agent_a_global_id,
                 agent_b_id,
                 agent_b_name,
                 agent_b_instruction,
                 agent_b_topic,
                 agent_b_topic_source,
+                agent_b_manager_name,
                 agent_b_global_id,
                 ollama_host,
                 endpoint,
@@ -388,6 +420,8 @@ impl AMSAgents {
                 conversation_graph_running_flag,
                 ledger,
                 app_state,
+                chat_tx,
+                chat_room_id,
             )
             .await;
         });
