@@ -55,6 +55,9 @@ pub(crate) struct NodeWorkerData {
 
     /// Optional topic tool agent id.
     pub(crate) topic_node: Option<usize>,
+
+    /// Optional explicit worker pair for dialogue loops.
+    pub(crate) partner_worker: Option<usize>,
 }
 
 #[derive(Clone)]
@@ -161,6 +164,7 @@ impl NodeData {
                 conversation_topic_source: "Own".to_string(),
                 manager_node: None,
                 topic_node: None,
+                partner_worker: None,
             }),
         }
     }

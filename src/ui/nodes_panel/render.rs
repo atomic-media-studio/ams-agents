@@ -439,6 +439,13 @@ impl AMSAgents {
                     ui.separator();
 
                     ui.horizontal(|ui| {
+                        if ui
+                            .add_enabled(!self.read_only_replay_mode, egui::Button::new("Add"))
+                            .clicked()
+                        {
+                            self.nodes_panel.add_agent(self.nodes_panel.selected_add_kind);
+                        }
+
                         egui::ComboBox::from_id_salt("add_agent_kind")
                             .selected_text(self.nodes_panel.selected_add_kind.label())
                             .show_ui(ui, |ui| {
@@ -540,51 +547,60 @@ impl AMSAgents {
                             };
                             let node = &rec.data;
                             let global_id = match &node.payload {
-                                NodePayload::Manager(m) => m.global_id.as_str(),
-                                NodePayload::Worker(w) => w.global_id.as_str(),
-                                NodePayload::Evaluator(e) => e.global_id.as_str(),
-                                NodePayload::Researcher(r) => r.global_id.as_str(),
-                                NodePayload::Topic(t) => t.global_id.as_str(),
+                                NodePayload::Manager(m) => m.global_id.clone(),
+                                NodePayload::Worker(w) => w.global_id.clone(),
+                                NodePayload::Evaluator(e) => e.global_id.clone(),
+                                NodePayload::Researcher(r) => r.global_id.clone(),
+                                NodePayload::Topic(t) => t.global_id.clone(),
                             };
                             let row_label = node.label.clone();
 
                             ui.set_width(ui.available_width());
                             let row_state_id = ui.make_persistent_id(("agent_row", node_id));
-                            let header_close = egui::collapsing_header::CollapsingState::load_with_default_open(
-                                ui.ctx(),
-                                row_state_id,
-                                true,
-                            )
-                            .show_header(ui, |ui| {
-                                ui.horizontal(|ui| {
-                                    ui.spacing_mut().item_spacing.x = 6.0;
-                                    ui.label(&row_label);
-                                    ui.label("•");
-                                    ui.label(global_id);
-                                    ui.label("•");
-                                    if !self.read_only_replay_mode {
-                                        let x_btn = egui::Button::new(
-                                            egui::RichText::new(regular::X)
-                                                .line_height(Some(ui.text_style_height(&egui::TextStyle::Body))),
-                                        )
-                                        .frame(false)
-                                        .min_size(egui::Vec2::ZERO)
-                                        .small();
-                                        if ui
-                                            .add(x_btn)
-                                            .on_hover_text("Remove")
-                                            .clicked()
-                                        {
-                                            row_remove.push(node_id);
-                                        }
-                                    }
+                            egui::Frame::default()
+                                .stroke(egui::Stroke::new(
+                                    1.0,
+                                    ui.visuals().widgets.noninteractive.bg_stroke.color,
+                                ))
+                                .corner_radius(4.0)
+                                .inner_margin(egui::Margin::same(6))
+                                .show(ui, |ui| {
+                                    let header_close = egui::collapsing_header::CollapsingState::load_with_default_open(
+                                        ui.ctx(),
+                                        row_state_id,
+                                        true,
+                                    )
+                                    .show_header(ui, |ui| {
+                                        ui.horizontal(|ui| {
+                                            ui.spacing_mut().item_spacing.x = 6.0;
+                                            ui.label(&row_label);
+                                            ui.label("•");
+                                            ui.label(global_id);
+                                            ui.label("•");
+                                            if !self.read_only_replay_mode {
+                                                let x_btn = egui::Button::new(
+                                                    egui::RichText::new(regular::X)
+                                                        .line_height(Some(ui.text_style_height(&egui::TextStyle::Body))),
+                                                )
+                                                .frame(false)
+                                                .min_size(egui::Vec2::ZERO)
+                                                .small();
+                                                if ui
+                                                    .add(x_btn)
+                                                    .on_hover_text("Remove")
+                                                    .clicked()
+                                                {
+                                                    row_remove.push(node_id);
+                                                }
+                                            }
+                                        });
+                                    });
+                                    let _ = header_close.body(|ui| {
+                                        ui.add_enabled_ui(!self.read_only_replay_mode, |ui| {
+                                            viewer.show_body(node_id, ui, &mut self.nodes_panel.agents);
+                                        });
+                                    });
                                 });
-                            });
-                            let _ = header_close.body(|ui| {
-                                ui.add_enabled_ui(!self.read_only_replay_mode, |ui| {
-                                    viewer.show_body(node_id, ui, &mut self.nodes_panel.agents);
-                                });
-                            });
                             ui.add_space(4.0);
                         }
                         for id in row_remove {

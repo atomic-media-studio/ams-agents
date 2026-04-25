@@ -6,6 +6,8 @@ use crate::agents::nodes_panel::{
     AgentNodeKind, AgentRecord, EvaluatorAgentsPick, NodePayload, TOPIC_PRESETS,
 };
 
+const CUSTOM_TOPIC_LABEL: &str = "Custom";
+
 pub fn show_node_body(id: usize, ui: &mut egui::Ui, agents: &mut [AgentRecord]) {
     let Some(idx) = agents.iter().position(|a| a.id == id) else {
         return;
@@ -23,8 +25,6 @@ pub fn show_node_body(id: usize, ui: &mut egui::Ui, agents: &mut [AgentRecord]) 
                         ui.label("Name:");
                         ui.add(egui::TextEdit::singleline(&mut manager_data.name));
                     });
-
-                    ui.separator();
                 });
             }
         }
@@ -41,12 +41,29 @@ pub fn show_node_body(id: usize, ui: &mut egui::Ui, agents: &mut [AgentRecord]) 
                 .collect();
             managers.sort_by(|a, b| a.1.cmp(&b.1));
 
+            let mut workers: Vec<(usize, String)> = agents
+                .iter()
+                .filter_map(|a| {
+                    if let NodePayload::Worker(w) = &a.data.payload {
+                        Some((a.id, w.name.clone()))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            workers.sort_by(|a, b| a.1.cmp(&b.1));
+
             let my_manager_node = match &agents[idx].data.payload {
                 NodePayload::Worker(w) => w.manager_node,
                 _ => None,
             };
+            let my_partner_worker = match &agents[idx].data.payload {
+                NodePayload::Worker(w) => w.partner_worker,
+                _ => None,
+            };
 
             let mut pending_manager_pick: Option<Option<usize>> = None;
+            let mut pending_partner_pick: Option<Option<usize>> = None;
             {
                 let worker_data = match &mut agents[idx].data.payload {
                     NodePayload::Worker(w) => w,
@@ -82,6 +99,42 @@ pub fn show_node_body(id: usize, ui: &mut egui::Ui, agents: &mut [AgentRecord]) 
                                             .clicked()
                                         {
                                             pending_manager_pick = Some(Some(mgr_id));
+                                        }
+                                    }
+                                });
+                        });
+
+                        ui.horizontal(|ui| {
+                            ui.label("Pair with:");
+                            let selected_text = my_partner_worker
+                                .and_then(|pid| {
+                                    workers
+                                        .iter()
+                                        .find(|(wid, _)| *wid == pid)
+                                        .map(|(_, n)| n.clone())
+                                })
+                                .unwrap_or_else(|| "Auto".to_string());
+                            egui::ComboBox::from_id_salt(ui.id().with(id).with("partner_pick"))
+                                .selected_text(selected_text)
+                                .show_ui(ui, |ui| {
+                                    if ui
+                                        .selectable_label(my_partner_worker.is_none(), "Auto")
+                                        .clicked()
+                                    {
+                                        pending_partner_pick = Some(None);
+                                    }
+                                    for &(worker_id, ref worker_name) in &workers {
+                                        if worker_id == id {
+                                            continue;
+                                        }
+                                        if ui
+                                            .selectable_label(
+                                                my_partner_worker == Some(worker_id),
+                                                worker_name.as_str(),
+                                            )
+                                            .clicked()
+                                        {
+                                            pending_partner_pick = Some(Some(worker_id));
                                         }
                                     }
                                 });
@@ -156,6 +209,16 @@ pub fn show_node_body(id: usize, ui: &mut egui::Ui, agents: &mut [AgentRecord]) 
                                 worker_data.analysis_mode.clone()
                             })
                             .show_ui(ui, |ui| {
+                                if ui
+                                    .selectable_label(
+                                        worker_data.analysis_mode == CUSTOM_TOPIC_LABEL,
+                                        CUSTOM_TOPIC_LABEL,
+                                    )
+                                    .clicked()
+                                {
+                                    worker_data.analysis_mode = CUSTOM_TOPIC_LABEL.to_string();
+                                    worker_data.conversation_topic_source = "Own".to_string();
+                                }
                                 for &(label, sentence) in TOPIC_PRESETS {
                                     if ui
                                         .selectable_label(worker_data.analysis_mode == label, label)
@@ -163,24 +226,32 @@ pub fn show_node_body(id: usize, ui: &mut egui::Ui, agents: &mut [AgentRecord]) 
                                     {
                                         worker_data.analysis_mode = label.to_string();
                                         worker_data.conversation_topic = sentence.to_string();
+                                        worker_data.conversation_topic_source = "Preset".to_string();
                                     }
                                 }
                             });
                         });
                         ui.horizontal(|ui| {
                             ui.label("Topic:");
-                            ui.add(egui::TextEdit::singleline(
+                            let response = ui.add(egui::TextEdit::singleline(
                                 &mut worker_data.conversation_topic,
                             ));
+                            if response.changed() {
+                                worker_data.analysis_mode = CUSTOM_TOPIC_LABEL.to_string();
+                                worker_data.conversation_topic_source = "Own".to_string();
+                            }
                         });
-
-                        ui.separator();
                     });
             }
 
             if let Some(pick) = pending_manager_pick {
                 if let NodePayload::Worker(w) = &mut agents[idx].data.payload {
                     w.manager_node = pick;
+                }
+            }
+            if let Some(pick) = pending_partner_pick {
+                if let NodePayload::Worker(w) = &mut agents[idx].data.payload {
+                    w.partner_worker = pick;
                 }
             }
         }
@@ -380,8 +451,6 @@ pub fn show_node_body(id: usize, ui: &mut egui::Ui, agents: &mut [AgentRecord]) 
                                 );
                             }
                         });
-
-                        ui.separator();
                     });
             }
 
@@ -601,8 +670,6 @@ pub fn show_node_body(id: usize, ui: &mut egui::Ui, agents: &mut [AgentRecord]) 
                                 );
                             }
                         });
-
-                        ui.separator();
                     });
             }
 
@@ -663,8 +730,6 @@ pub fn show_node_body(id: usize, ui: &mut egui::Ui, agents: &mut [AgentRecord]) 
                             ui.add(egui::TextEdit::singleline(&mut topic_data.topic));
                         });
                     });
-
-                    ui.separator();
                 });
             }
         }

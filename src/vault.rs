@@ -335,16 +335,7 @@ impl MasterVault {
         if !self.status.is_empty() {
             ui.label(egui::RichText::new(&self.status).weak());
         }
-        ui.label(
-            egui::RichText::new(format!(
-                "KDF: Argon2id (m={} KiB, t={}, p={})",
-                self.kdf_params.memory_cost_kib,
-                self.kdf_params.time_cost,
-                self.kdf_params.parallelism,
-            ))
-            .small()
-            .weak(),
-        );
+
     }
 
     /// Thin top strip with Lock; call from a `TopBottomPanel::top`. Returns true if user locked.

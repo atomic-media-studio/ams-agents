@@ -1,3 +1,5 @@
+#![allow(dead_code, unused_imports)]
+
 pub use incoming::{MessageSource, should_dispatch_to_model};
 pub mod chat;
 pub use chat::*;

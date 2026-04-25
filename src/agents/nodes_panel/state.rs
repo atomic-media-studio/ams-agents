@@ -41,6 +41,18 @@ impl Default for NodesPanelState {
 }
 
 impl NodesPanelState {
+    pub(crate) fn add_agent(&mut self, kind: super::model::AgentNodeKind) {
+        let id = self.next_agent_id;
+        let data = match kind {
+            super::model::AgentNodeKind::Manager => NodeData::new_manager(),
+            super::model::AgentNodeKind::Worker => NodeData::new_worker(),
+            super::model::AgentNodeKind::Evaluator => NodeData::new_evaluator(),
+            super::model::AgentNodeKind::Researcher => NodeData::new_researcher(),
+            super::model::AgentNodeKind::Topic => NodeData::new_topic(),
+        };
+        self.insert_agent_with_id(id, egui::pos2(0.0, 0.0), true, data);
+    }
+
     pub(crate) fn insert_agent_with_id(
         &mut self,
         id: usize,

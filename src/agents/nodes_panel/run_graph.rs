@@ -12,6 +12,13 @@ use super::play_plan::{
 };
 
 impl AMSAgents {
+    fn should_log_play_plan() -> bool {
+        std::env::var("AMS_LOG_PLAY_PLAN")
+            .ok()
+            .map(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+            .unwrap_or(false)
+    }
+
     pub(crate) fn stop_graph(&mut self) {
         self.ollama_run_epoch.fetch_add(1, Ordering::SeqCst);
         for (_, flag, _) in &self.conversation_loop_handles {
@@ -102,8 +109,10 @@ impl AMSAgents {
         }
 
         sync_evaluator_researcher_activity(&mut self.nodes_panel.agents);
+        let sidecar_policy = crate::agents::conversation_sidecars::SidecarSchedulingPolicy::from_env();
         let sidecars = std::sync::Arc::new(build_conversation_sidecar_from_agents(
             &self.nodes_panel.agents,
+            sidecar_policy,
         ));
 
         // Workers with a non-empty topic, stable order for pairing (row order by id).
@@ -114,6 +123,7 @@ impl AMSAgents {
             topic: String,
             topic_source: String,
             manager_name: String,
+            partner_worker: Option<usize>,
         }
 
         let mut eligible: Vec<EligibleWorker> = self
@@ -146,6 +156,7 @@ impl AMSAgents {
                             topic: w.conversation_topic.clone(),
                             topic_source: w.conversation_topic_source.clone(),
                             manager_name,
+                            partner_worker: w.partner_worker,
                         });
                     }
                 }
@@ -153,12 +164,19 @@ impl AMSAgents {
             })
             .collect();
         eligible.sort_by_key(|w| w.id);
+        let eligible_by_id: std::collections::HashMap<usize, usize> = eligible
+            .iter()
+            .enumerate()
+            .map(|(idx, w)| (w.id, idx))
+            .collect();
 
         if eligible.is_empty() {
-            let play_plan = collect_run_play_plan_from_agents(&self.nodes_panel.agents, vec![]);
-            match serde_json::to_string_pretty(&play_plan) {
-                Ok(json) => println!("[Run Graph] play plan:\n{}", json),
-                Err(e) => eprintln!("[Run Graph] failed to serialize play plan: {e}"),
+            if Self::should_log_play_plan() {
+                let play_plan = collect_run_play_plan_from_agents(&self.nodes_panel.agents, vec![]);
+                match serde_json::to_string_pretty(&play_plan) {
+                    Ok(json) => println!("[Run Graph] play plan:\n{}", json),
+                    Err(e) => eprintln!("[Run Graph] failed to serialize play plan: {e}"),
+                }
             }
             if let Some(ref l) = self.event_ledger {
                 let _ = l.try_finalize_run_stopped("no_eligible_conversation_workers");
@@ -175,11 +193,44 @@ impl AMSAgents {
         let graph_running_flag = self.conversation_graph_running.clone();
 
         let mut conversations_plan = Vec::new();
+        let mut used_workers: std::collections::HashSet<usize> = std::collections::HashSet::new();
+        let mut planned_pairs: Vec<(usize, usize)> = Vec::new();
+
+        // Explicit pairs first, then fallback to sorted row order for unpaired workers.
+        for a in &eligible {
+            if used_workers.contains(&a.id) {
+                continue;
+            }
+            if let Some(partner_id) = a.partner_worker
+                && partner_id != a.id
+                && !used_workers.contains(&partner_id)
+                && eligible_by_id.contains_key(&partner_id)
+            {
+                used_workers.insert(a.id);
+                used_workers.insert(partner_id);
+                planned_pairs.push((a.id, partner_id));
+            }
+        }
+        let remaining: Vec<usize> = eligible
+            .iter()
+            .filter(|w| !used_workers.contains(&w.id))
+            .map(|w| w.id)
+            .collect();
         let mut i = 0;
-        while i < eligible.len() {
-            if i + 1 < eligible.len() {
-                let a = &eligible[i];
-                let b = &eligible[i + 1];
+        while i < remaining.len() {
+            if i + 1 < remaining.len() {
+                planned_pairs.push((remaining[i], remaining[i + 1]));
+                i += 2;
+            } else {
+                planned_pairs.push((remaining[i], remaining[i]));
+                i += 1;
+            }
+        }
+
+        for (a_id, b_id) in planned_pairs {
+            let a = &eligible[*eligible_by_id.get(&a_id).unwrap()];
+            let b = &eligible[*eligible_by_id.get(&b_id).unwrap()];
+            if a.id != b.id {
                 let gid_a = self
                     .nodes_panel
                     .agents
@@ -244,9 +295,7 @@ impl AMSAgents {
                     b.topic_source.clone(),
                     b.manager_name.clone(),
                 );
-                i += 2;
             } else {
-                let a = &eligible[i];
                 let gid = self
                     .nodes_panel
                     .agents
@@ -298,15 +347,16 @@ impl AMSAgents {
                     a.topic_source.clone(),
                     a.manager_name.clone(),
                 );
-                i += 1;
             }
         }
 
-        let play_plan =
-            collect_run_play_plan_from_agents(&self.nodes_panel.agents, conversations_plan);
-        match serde_json::to_string_pretty(&play_plan) {
-            Ok(json) => println!("[Run Graph] play plan:\n{}", json),
-            Err(e) => eprintln!("[Run Graph] failed to serialize play plan: {e}"),
+        if Self::should_log_play_plan() {
+            let play_plan =
+                collect_run_play_plan_from_agents(&self.nodes_panel.agents, conversations_plan);
+            match serde_json::to_string_pretty(&play_plan) {
+                Ok(json) => println!("[Run Graph] play plan:\n{}", json),
+                Err(e) => eprintln!("[Run Graph] failed to serialize play plan: {e}"),
+            }
         }
 
         self.conversation_graph_running

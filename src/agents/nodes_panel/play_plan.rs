@@ -53,6 +53,7 @@ pub(super) struct PlayResearcherInPlayJson {
 
 pub(super) fn build_conversation_sidecar_from_agents(
     agents: &[AgentRecord],
+    scheduling: crate::agents::conversation_sidecars::SidecarSchedulingPolicy,
 ) -> crate::agents::conversation_sidecars::ConversationSidecarConfig {
     use crate::agents::conversation_sidecars::{
         ConversationSidecarConfig, SidecarEvaluator, SidecarResearcher,
@@ -88,6 +89,7 @@ pub(super) fn build_conversation_sidecar_from_agents(
     ConversationSidecarConfig {
         evaluators,
         researchers,
+        scheduling,
     }
 }
 

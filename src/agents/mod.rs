@@ -16,6 +16,7 @@ pub struct AgentChatEvent {
 
 pub mod agent_conversation_loop;
 pub mod conversation_sidecars;
+pub mod dialogue;
 pub(crate) mod nodes_panel;
 
 pub struct AMSAgents {

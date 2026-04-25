@@ -1,19 +1,33 @@
 use anyhow::Result;
-use std::time::SystemTime;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::SystemTime;
 
 use crate::app_state::AppState;
 use crate::metrics::{InferenceTimingEvent, InferenceTraceContext};
 use crate::run::manifest::now_rfc3339_utc;
 
 mod client;
+mod engine;
 
 /// Sentinel error message when the user stops inference or starts a new run.
 pub const OLLAMA_STOPPED_MSG: &str = "ollama inference stopped";
 
 /// When live epoch differs from `captured_epoch`, streaming stops cooperatively (user Stop).
 pub type OllamaStopEpoch = (Arc<AtomicU64>, u64);
+
+#[derive(Clone, Debug)]
+pub struct TokenUsage {
+    pub prompt_token_count: u64,
+    pub candidates_token_count: u64,
+    pub total_token_count: u64,
+}
+
+pub struct OllamaInferenceResult {
+    pub model: Option<String>,
+    pub response: String,
+    pub usage: Option<TokenUsage>,
+}
 
 fn format_rfc3339(ts: SystemTime) -> String {
     chrono::DateTime::<chrono::Utc>::from(ts).to_rfc3339()
@@ -34,6 +48,32 @@ pub async fn send_to_ollama(
     app_state: Arc<AppState>,
     trace_context: InferenceTraceContext,
 ) -> Result<String> {
+    let result = send_to_ollama_with_result(
+        ollama_host,
+        instruction,
+        input,
+        limit_token,
+        num_predict,
+        model_override,
+        stop_epoch,
+        app_state,
+        trace_context,
+    )
+    .await?;
+    Ok(result.response)
+}
+
+pub async fn send_to_ollama_with_result(
+    ollama_host: &str,
+    instruction: &str,
+    input: &str,
+    limit_token: bool,
+    num_predict: &str,
+    model_override: Option<&str>,
+    stop_epoch: Option<OllamaStopEpoch>,
+    app_state: Arc<AppState>,
+    trace_context: InferenceTraceContext,
+) -> Result<OllamaInferenceResult> {
     let metrics_sink = app_state.metrics_sink();
     let t_start_wall = SystemTime::now();
     let t_start = std::time::Instant::now();
@@ -67,16 +107,29 @@ pub async fn send_to_ollama(
         }
     }
 
-    let runner_ctx = match client::build_runner_context(
-        ollama_host,
-        instruction,
-        limit_token,
-        num_predict,
-        model_override,
-    )
-    .await
+    let generation_limit = if limit_token {
+        num_predict.parse::<u32>().ok()
+    } else {
+        None
+    };
+    let context_window = std::env::var("AMS_OLLAMA_CONTEXT_WINDOW")
+        .ok()
+        .and_then(|v| v.parse::<u32>().ok());
+    let engine = engine::InferenceEngine::from_host(ollama_host);
+    let infer = match engine
+        .infer(engine::InferenceRequest {
+            instruction,
+            input,
+            model_override,
+            options: engine::InferenceOptions {
+                max_output_tokens: generation_limit,
+                context_window,
+            },
+            stop_epoch,
+        })
+        .await
     {
-        Ok(ctx) => ctx,
+        Ok(out) => out,
         Err(e) => {
             let t_end_wall = SystemTime::now();
             metrics_sink.record_inference(InferenceTimingEvent {
@@ -104,72 +157,37 @@ pub async fn send_to_ollama(
             return Err(e);
         }
     };
-    client::print_context_preview(input);
 
-    let model_name = Some(runner_ctx.model_name.clone());
-    match client::run_prompt_streaming(runner_ctx, input, false, stop_epoch).await {
-        Ok(streaming) => {
-            let t_end_wall = SystemTime::now();
-            let first_token_at = streaming
-                .ttft
-                .and_then(|d| t_start_wall.checked_add(d))
-                .map(format_rfc3339);
-            let ttft_ms = streaming.ttft.map(|d| d.as_millis());
-            let output_chars = streaming.response.chars().count();
-            let token_usage = streaming.usage.clone();
-            metrics_sink.record_inference(InferenceTimingEvent {
-                event_type: "inference_timing".to_string(),
-                timestamp: now_rfc3339_utc(),
-                source: trace_context.source,
-                experiment_id: trace_context.experiment_id,
-                run_id: trace_context.run_id,
-                node_global_id: trace_context.node_global_id,
-                model: model_name,
-                success: true,
-                error: None,
-                t_start: format_rfc3339(t_start_wall),
-                t_first_token: first_token_at,
-                t_end: format_rfc3339(t_end_wall),
-                duration_ms: t_start.elapsed().as_millis(),
-                ttft_ms,
-                input_chars: input.chars().count(),
-                output_chars,
-                prompt_token_count: token_usage.as_ref().map(|u| u.prompt_token_count),
-                candidates_token_count: token_usage
-                    .as_ref()
-                    .map(|u| u.candidates_token_count),
-                total_token_count: token_usage.as_ref().map(|u| u.total_token_count),
-                prompt: Some(input.to_string()),
-            });
-            Ok(streaming.response)
-        }
-        Err(e) => {
-            let t_end_wall = SystemTime::now();
-            metrics_sink.record_inference(InferenceTimingEvent {
-                event_type: "inference_timing".to_string(),
-                timestamp: now_rfc3339_utc(),
-                source: trace_context.source,
-                experiment_id: trace_context.experiment_id,
-                run_id: trace_context.run_id,
-                node_global_id: trace_context.node_global_id,
-                model: model_name,
-                success: false,
-                error: Some(e.to_string()),
-                t_start: format_rfc3339(t_start_wall),
-                t_first_token: None,
-                t_end: format_rfc3339(t_end_wall),
-                duration_ms: t_start.elapsed().as_millis(),
-                ttft_ms: None,
-                input_chars: input.chars().count(),
-                output_chars: 0,
-                prompt_token_count: None,
-                candidates_token_count: None,
-                total_token_count: None,
-                prompt: Some(input.to_string()),
-            });
-            Err(e)
-        }
-    }
+    let t_end_wall = SystemTime::now();
+    let output_chars = infer.text.chars().count();
+    metrics_sink.record_inference(InferenceTimingEvent {
+        event_type: "inference_timing".to_string(),
+        timestamp: now_rfc3339_utc(),
+        source: trace_context.source,
+        experiment_id: trace_context.experiment_id,
+        run_id: trace_context.run_id,
+        node_global_id: trace_context.node_global_id,
+        model: Some(infer.model.clone()),
+        success: true,
+        error: None,
+        t_start: format_rfc3339(t_start_wall),
+        t_first_token: None,
+        t_end: format_rfc3339(t_end_wall),
+        duration_ms: t_start.elapsed().as_millis(),
+        ttft_ms: None,
+        input_chars: input.chars().count(),
+        output_chars,
+        prompt_token_count: infer.usage.as_ref().map(|u| u.prompt_token_count),
+        candidates_token_count: infer.usage.as_ref().map(|u| u.candidates_token_count),
+        total_token_count: infer.usage.as_ref().map(|u| u.total_token_count),
+        prompt: Some(input.to_string()),
+    });
+
+    Ok(OllamaInferenceResult {
+        model: Some(infer.model),
+        response: infer.text,
+        usage: infer.usage,
+    })
 }
 
 pub async fn test_ollama(
@@ -177,79 +195,22 @@ pub async fn test_ollama(
     model_override: Option<&str>,
     app_state: Arc<AppState>,
 ) -> Result<String> {
-    let metrics_sink = app_state.metrics_sink();
-    let runner_ctx = client::build_runner_context(
+    let result = send_to_ollama_with_result(
         ollama_host,
         "You are a helpful assistant running locally via Ollama.",
+        "Hello, how are you?",
         false,
         "",
         model_override,
+        None,
+        app_state,
+        InferenceTraceContext {
+            source: "settings.test_ollama".to_string(),
+            experiment_id: None,
+            run_id: None,
+            node_global_id: None,
+        },
     )
     .await?;
-    let input = "Hello, how are you?";
-    println!("Input: {}", input);
-    let model_name = runner_ctx.model_name.clone();
-    let t_start_wall = SystemTime::now();
-    let t_start = std::time::Instant::now();
-    match client::run_prompt_streaming(runner_ctx, input, true, None).await {
-        Ok(streaming) => {
-            let t_end_wall = SystemTime::now();
-            let first_token_at = streaming
-                .ttft
-                .and_then(|d| t_start_wall.checked_add(d))
-                .map(format_rfc3339);
-            metrics_sink.record_inference(InferenceTimingEvent {
-                event_type: "inference_timing".to_string(),
-                timestamp: now_rfc3339_utc(),
-                source: "settings.test_ollama".to_string(),
-                experiment_id: None,
-                run_id: None,
-                node_global_id: None,
-                model: Some(model_name),
-                success: true,
-                error: None,
-                t_start: format_rfc3339(t_start_wall),
-                t_first_token: first_token_at,
-                t_end: format_rfc3339(t_end_wall),
-                duration_ms: t_start.elapsed().as_millis(),
-                ttft_ms: streaming.ttft.map(|d| d.as_millis()),
-                input_chars: input.chars().count(),
-                output_chars: streaming.response.chars().count(),
-                prompt_token_count: streaming.usage.as_ref().map(|u| u.prompt_token_count),
-                candidates_token_count: streaming
-                    .usage
-                    .as_ref()
-                    .map(|u| u.candidates_token_count),
-                total_token_count: streaming.usage.as_ref().map(|u| u.total_token_count),
-                prompt: Some(input.to_string()),
-            });
-            Ok(streaming.response)
-        }
-        Err(e) => {
-            let t_end_wall = SystemTime::now();
-            metrics_sink.record_inference(InferenceTimingEvent {
-                event_type: "inference_timing".to_string(),
-                timestamp: now_rfc3339_utc(),
-                source: "settings.test_ollama".to_string(),
-                experiment_id: None,
-                run_id: None,
-                node_global_id: None,
-                model: Some(model_name),
-                success: false,
-                error: Some(e.to_string()),
-                t_start: format_rfc3339(t_start_wall),
-                t_first_token: None,
-                t_end: format_rfc3339(t_end_wall),
-                duration_ms: t_start.elapsed().as_millis(),
-                ttft_ms: None,
-                input_chars: input.chars().count(),
-                output_chars: 0,
-                prompt_token_count: None,
-                candidates_token_count: None,
-                total_token_count: None,
-                prompt: Some(input.to_string()),
-            });
-            Err(e)
-        }
-    }
+    Ok(result.response)
 }

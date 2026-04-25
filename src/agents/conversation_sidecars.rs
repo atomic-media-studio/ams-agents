@@ -18,6 +18,79 @@ use std::sync::Arc;
 pub struct ConversationSidecarConfig {
     pub evaluators: Vec<SidecarEvaluator>,
     pub researchers: Vec<SidecarResearcher>,
+    pub scheduling: SidecarSchedulingPolicy,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ResearchExecutionPolicy {
+    Off,
+    Inline,
+    Background,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EvaluatorExecutionPolicy {
+    Off,
+    InlineEveryTurn,
+    BatchedEvery(usize),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SidecarSchedulingPolicy {
+    pub research: ResearchExecutionPolicy,
+    pub evaluator: EvaluatorExecutionPolicy,
+}
+
+impl Default for SidecarSchedulingPolicy {
+    fn default() -> Self {
+        Self {
+            research: ResearchExecutionPolicy::Inline,
+            evaluator: EvaluatorExecutionPolicy::InlineEveryTurn,
+        }
+    }
+}
+
+impl SidecarSchedulingPolicy {
+    pub fn from_env() -> Self {
+        let mut policy = Self::default();
+
+        policy.research = match std::env::var("AMS_RESEARCH_POLICY")
+            .unwrap_or_else(|_| "inline".to_string())
+            .to_lowercase()
+            .as_str()
+        {
+            "off" => ResearchExecutionPolicy::Off,
+            "background" => ResearchExecutionPolicy::Background,
+            _ => ResearchExecutionPolicy::Inline,
+        };
+
+        let raw_eval = std::env::var("AMS_EVALUATOR_POLICY")
+            .unwrap_or_else(|_| "inline".to_string())
+            .to_lowercase();
+        policy.evaluator = if raw_eval == "off" {
+            EvaluatorExecutionPolicy::Off
+        } else if raw_eval.starts_with("batched:") {
+            let every = raw_eval
+                .split(':')
+                .nth(1)
+                .and_then(|n| n.parse::<usize>().ok())
+                .unwrap_or(3)
+                .max(1);
+            EvaluatorExecutionPolicy::BatchedEvery(every)
+        } else {
+            EvaluatorExecutionPolicy::InlineEveryTurn
+        };
+
+        policy
+    }
+
+    pub fn should_run_evaluators(self, turn_index: usize) -> bool {
+        match self.evaluator {
+            EvaluatorExecutionPolicy::Off => false,
+            EvaluatorExecutionPolicy::InlineEveryTurn => true,
+            EvaluatorExecutionPolicy::BatchedEvery(n) => (turn_index + 1) % n == 0,
+        }
+    }
 }
 
 #[derive(Clone)]

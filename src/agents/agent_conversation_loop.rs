@@ -1,82 +1,41 @@
 use crate::agents::conversation_sidecars::{
-    ConversationSidecarConfig, ResearchMessageGrounding, apply_research_injection,
+    ConversationSidecarConfig, ResearchExecutionPolicy, ResearchMessageGrounding,
     run_evaluator_sidecars_for_message, run_researchers_before_worker_turn,
-    DEFAULT_RESEARCH_INJECTION_PLACEMENT,
 };
+use crate::agents::dialogue::{DialogueSessionState, PromptAssembler, PromptBuildInput};
 use crate::app_state::AppState;
 use crate::metrics::{InferenceTraceContext, TurnTimingEvent, TurnTracker};
 use crate::run::manifest::now_rfc3339_utc;
 use crate::run::event_ledger::EventLedger;
 use crate::run::manifest::RunContext;
 use crate::ollama::OllamaStopEpoch;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-// ─── Conversation history ─────────────────────────────────────────────────
-
-#[derive(Clone)]
-struct ConversationMessage {
-    agent_id: usize,
-    agent_name: String,
-    message: String,
+#[derive(Clone, Copy)]
+struct ConversationPerfConfig {
+    quiet_logs: bool,
+    async_http: bool,
+    compact_ledger: bool,
 }
 
-struct ConversationHistory {
-    messages: Vec<ConversationMessage>,
-    max_history: usize,
-}
-
-impl ConversationHistory {
-    fn new(max_history: usize) -> Self {
+impl ConversationPerfConfig {
+    fn load() -> Self {
+        let fast_mode = env_flag("AMS_FAST_MODE", false);
         Self {
-            messages: Vec::new(),
-            max_history,
+            quiet_logs: env_flag("AMS_QUIET_LOGS", fast_mode || true),
+            async_http: env_flag("AMS_ASYNC_HTTP", true),
+            compact_ledger: env_flag("AMS_COMPACT_LEDGER", fast_mode),
         }
     }
+}
 
-    fn add_message(&mut self, agent_id: usize, agent_name: String, message: String) {
-        self.messages.push(ConversationMessage {
-            agent_id,
-            agent_name,
-            message,
-        });
-        if self.messages.len() > self.max_history {
-            self.messages.remove(0);
-        }
-    }
-
-    /// Latest utterance from a participant (e.g. partner's last line before your turn).
-    fn last_message_from_agent(&self, agent_id: usize) -> Option<&str> {
-        self.messages
-            .iter()
-            .rev()
-            .find(|m| m.agent_id == agent_id)
-            .map(|m| m.message.as_str())
-    }
-
-    fn format_history(&self, _current_agent_name: &str, partner_name: &str, topic: &str) -> String {
-        if self.messages.is_empty() {
-            return format!(
-                "You are discussing \"{}\" with {}. Please start the conversation.",
-                topic, partner_name
-            );
-        }
-
-        let mut formatted = format!(
-            "You are discussing \"{}\" with {}. Here's the conversation so far:\n\n",
-            topic, partner_name
-        );
-
-        for msg in &self.messages {
-            formatted.push_str(&format!("{}: {}\n\n", msg.agent_name, msg.message));
-        }
-
-        formatted.push_str(&format!(
-            "Your turn: Respond to {}'s last message.",
-            partner_name
-        ));
-        formatted
-    }
+fn env_flag(name: &str, default: bool) -> bool {
+    std::env::var(name)
+        .ok()
+        .map(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+        .unwrap_or(default)
 }
 
 // ─── Conversation loop entry point ────────────────────────────────────────
@@ -118,10 +77,15 @@ pub async fn start_conversation_loop(
     chat_turn_tx: Option<std::sync::mpsc::Sender<crate::agents::AgentChatEvent>>,
     chat_room_id: Option<String>,
 ) {
+    let perf = ConversationPerfConfig::load();
     let mut turn = 0;
     let mut is_agent_a_turn = true;
-    let mut history = ConversationHistory::new(history_size.max(1));
+    let session_id = format!("pair-{message_event_source_id}-{agent_a_id}-{agent_b_id}");
+    let mut session = DialogueSessionState::new(session_id.clone(), history_size.max(1));
     let mut turn_tracker = TurnTracker::default();
+    let (background_research_tx, mut background_research_rx) =
+        tokio::sync::mpsc::unbounded_channel::<(usize, String)>();
+    let mut background_research_cache: HashMap<usize, String> = HashMap::new();
     let conversation_manager_name = if agent_a_manager_name == agent_b_manager_name {
         agent_a_manager_name.clone()
     } else {
@@ -137,10 +101,12 @@ pub async fn start_conversation_loop(
     );
 
     let start_message = format!(
-        "Conversation started\nManager: {}\nPair: {} ↔ {}\n{}",
-        conversation_manager_name, agent_a_name, agent_b_name, topics_readable
+        "Conversation started\nSession: {}\nManager: {}\nPair: {} ↔ {}\n{}",
+        session_id, conversation_manager_name, agent_a_name, agent_b_name, topics_readable
     );
-    println!("\n{}", start_message);
+    if !perf.quiet_logs {
+        println!("\n{}", start_message);
+    }
 
     if let Some(ref l) = ledger {
         let _ = l.append_with_hashes(
@@ -153,7 +119,31 @@ pub async fn start_conversation_loop(
         );
     }
 
-    if let Err(e) = crate::web::send_conversation_message(
+    if perf.async_http {
+        let endpoint = endpoint.clone();
+        let conversation_manager_name = conversation_manager_name.clone();
+        let topics_summary = topics_summary.clone();
+        let start_message = start_message.clone();
+        let run_context = run_context.clone();
+        let ledger = ledger.clone();
+        tokio::spawn(async move {
+            if let Err(e) = crate::web::send_conversation_message(
+                &endpoint,
+                0,
+                &conversation_manager_name,
+                0,
+                "System",
+                &topics_summary,
+                &start_message,
+                run_context.as_ref(),
+                ledger.as_ref(),
+            )
+            .await
+            {
+                eprintln!("[HTTP] Failed to send conversation start message: {}", e);
+            }
+        });
+    } else if let Err(e) = crate::web::send_conversation_message(
         &endpoint,
         0,
         &conversation_manager_name,
@@ -184,8 +174,16 @@ pub async fn start_conversation_loop(
         };
 
         if !active {
-            println!("\n[Conversation stopped by user]");
+            if !perf.quiet_logs {
+                println!("\n[Conversation stopped by user]");
+            }
             break;
+        }
+
+        while let Ok((worker_id, refs)) = background_research_rx.try_recv() {
+            if !refs.trim().is_empty() {
+                background_research_cache.insert(worker_id, refs);
+            }
         }
 
         let (
@@ -232,62 +230,93 @@ pub async fn start_conversation_loop(
         };
 
         // Pre-turn: ground on the tied worker's last line when it exists; else partner line (first turn).
-        let research_injection = if let Some((line, grounding)) = history
+        let research_grounding = session
             .last_message_from_agent(sender_id)
             .map(|t| (t, ResearchMessageGrounding::TiedWorkerLastMessage))
             .or_else(|| {
-                history
+                session
                     .last_message_from_agent(receiver_id)
                     .map(|p| (p, ResearchMessageGrounding::PartnerFallbackFirstTurn))
-            }) {
-            match run_researchers_before_worker_turn(
-                sidecars.as_ref(),
-                sender_id,
-                sender_name.as_str(),
-                line,
-                grounding,
-                ollama_host.as_str(),
-                endpoint.as_str(),
-                run_context.as_ref(),
-                selected_model.as_deref(),
-                ollama_stop_epoch.clone(),
-                false,
-                ledger.as_ref(),
-                app_state.clone(),
-            )
-            .await
-            {
-                Ok(s) => s,
-                Err(()) => break,
+            });
+
+        let research_injection = match sidecars.scheduling.research {
+            ResearchExecutionPolicy::Off => String::new(),
+            ResearchExecutionPolicy::Inline => {
+                if let Some((line, grounding)) = research_grounding {
+                    match run_researchers_before_worker_turn(
+                        sidecars.as_ref(),
+                        sender_id,
+                        sender_name.as_str(),
+                        line,
+                        grounding,
+                        ollama_host.as_str(),
+                        endpoint.as_str(),
+                        run_context.as_ref(),
+                        selected_model.as_deref(),
+                        ollama_stop_epoch.clone(),
+                        false,
+                        ledger.as_ref(),
+                        app_state.clone(),
+                    )
+                    .await
+                    {
+                        Ok(s) => s,
+                        Err(()) => break,
+                    }
+                } else {
+                    String::new()
+                }
             }
-        } else {
-            String::new()
+            ResearchExecutionPolicy::Background => {
+                if let Some((line, grounding)) = research_grounding {
+                    let bg_sidecars = sidecars.clone();
+                    let bg_sender = sender_name.clone();
+                    let bg_line = line.to_string();
+                    let bg_host = ollama_host.clone();
+                    let bg_endpoint = endpoint.clone();
+                    let bg_context = run_context.clone();
+                    let bg_selected_model = selected_model.clone();
+                    let bg_ollama_epoch = ollama_stop_epoch.clone();
+                    let bg_ledger = ledger.clone();
+                    let bg_app_state = app_state.clone();
+                    let tx = background_research_tx.clone();
+                    tokio::spawn(async move {
+                        if let Ok(research) = run_researchers_before_worker_turn(
+                            bg_sidecars.as_ref(),
+                            sender_id,
+                            bg_sender.as_str(),
+                            &bg_line,
+                            grounding,
+                            bg_host.as_str(),
+                            bg_endpoint.as_str(),
+                            bg_context.as_ref(),
+                            bg_selected_model.as_deref(),
+                            bg_ollama_epoch,
+                            false,
+                            bg_ledger.as_ref(),
+                            bg_app_state,
+                        )
+                        .await
+                        {
+                            let _ = tx.send((sender_id, research));
+                        }
+                    });
+                }
+                background_research_cache.remove(&sender_id).unwrap_or_default()
+            }
         };
 
-        let manager_step_directive = format!(
-            "Step {} directive from {}: Respond only as {} to {} about \"{}\". Stay on-topic and do not switch to unrelated domains.",
-            turn + 1,
-            manager_name,
-            sender_name,
-            receiver_name,
-            effective_topic
-        );
-        let enhanced_instruction = format!(
-            "{}\n\n{}\n\nYou are now in a conversation with {} about \"{}\". Keep your responses concise and engaging (2-3 sentences preferred). Respond as yourself only, and do not write dialogue for other agents or add speaker labels.",
-            sender_instruction,
-            manager_step_directive,
-            receiver_name,
-            effective_topic
-        );
-
-        let conversation_context =
-            history.format_history(&sender_name, &receiver_name, &effective_topic);
-        let (enhanced_instruction, conversation_context) = apply_research_injection(
-            DEFAULT_RESEARCH_INJECTION_PLACEMENT,
-            enhanced_instruction,
-            conversation_context,
-            &research_injection,
-        );
+        let memory_block = session.memory_block(&receiver_name, &effective_topic);
+        let assembled_prompt = PromptAssembler::assemble(PromptBuildInput {
+            base_instruction: &sender_instruction,
+            manager_name: &manager_name,
+            turn_index: turn,
+            sender_name: &sender_name,
+            receiver_name: &receiver_name,
+            topic: &effective_topic,
+            memory_block: &memory_block,
+            sidecar_augmentation: &research_injection,
+        });
 
         app_state.metrics_sink().record_turn(TurnTimingEvent {
             event_type: "turn_timing".to_string(),
@@ -303,15 +332,10 @@ pub async fn start_conversation_loop(
             gap_ms: turn_tracker.current_gap_ms(),
         });
 
-        let turn_message = format!(
-            "Step {}: {} says next speaker is {} replying to {} about \"{}\".",
-            turn + 1,
-            manager_name,
-            sender_name,
-            receiver_name,
-            effective_topic
-        );
-        println!("{}", turn_message);
+        let turn_message = assembled_prompt.turn_directive.clone();
+        if !perf.quiet_logs {
+            println!("{}", turn_message);
+        }
 
         if let (Some(tx), Some(room_id)) = (&chat_turn_tx, &chat_room_id) {
             let _ = tx.send(crate::agents::AgentChatEvent {
@@ -321,39 +345,48 @@ pub async fn start_conversation_loop(
             });
         }
 
-        let endpoint_clone = endpoint.clone();
-        let topic_clone = effective_topic.clone();
-        let turn_message_clone = turn_message.clone();
-        let run_context_for_turn = run_context.clone();
-        let ledger_turn = ledger.clone();
-        tokio::spawn(async move {
-            if let Err(e) = crate::web::send_conversation_message(
-                &endpoint_clone,
-                0,
-                "Agent Manager",
-                0,
-                "System",
-                &topic_clone,
-                &turn_message_clone,
-                run_context_for_turn.as_ref(),
-                ledger_turn.as_ref(),
-            )
-            .await
-            {
-                eprintln!("[HTTP] Failed to send turn message: {}", e);
-            }
-        });
+        if perf.async_http {
+            let endpoint_clone = endpoint.clone();
+            let topic_clone = effective_topic.clone();
+            let turn_message_clone = turn_message.clone();
+            let run_context_for_turn = run_context.clone();
+            let ledger_turn = ledger.clone();
+            tokio::spawn(async move {
+                if let Err(e) = crate::web::send_conversation_message(
+                    &endpoint_clone,
+                    0,
+                    "Agent Manager",
+                    0,
+                    "System",
+                    &topic_clone,
+                    &turn_message_clone,
+                    run_context_for_turn.as_ref(),
+                    ledger_turn.as_ref(),
+                )
+                .await
+                {
+                    eprintln!("[HTTP] Failed to send turn message: {}", e);
+                }
+            });
+        }
 
-        let dialogue_input = format!("{}\n---\n{}", enhanced_instruction, conversation_context);
+        let dialogue_input = if perf.compact_ledger {
+            String::new()
+        } else {
+            format!(
+                "{}\n---\n{}",
+                assembled_prompt.system_instruction, assembled_prompt.user_prompt
+            )
+        };
         let sender_gid = if sender_id == agent_a_id {
             agent_a_global_id.clone()
         } else {
             agent_b_global_id.clone()
         };
-        match crate::ollama::send_to_ollama(
+        match crate::ollama::send_to_ollama_with_result(
             ollama_host.as_str(),
-            &enhanced_instruction,
-            &conversation_context,
+            &assembled_prompt.system_instruction,
+            &assembled_prompt.user_prompt,
             false,
             "",
             selected_model.as_deref(),
@@ -368,7 +401,8 @@ pub async fn start_conversation_loop(
         )
         .await
         {
-            Ok(response) => {
+            Ok(inference) => {
+                let response = inference.response;
                 if let Some(ref l) = ledger {
                     let _ = l.append_with_hashes(
                         "dialogue.turn",
@@ -379,18 +413,26 @@ pub async fn start_conversation_loop(
                         serde_json::json!({
                             "turn": turn,
                             "receiver_name": receiver_name,
+                            "prompt_chars": assembled_prompt.system_instruction.len() + assembled_prompt.user_prompt.len(),
                         }),
                     );
                 }
-                history.add_message(sender_id, sender_name.clone(), response.clone());
+                session.record_turn(
+                    sender_id,
+                    sender_name.clone(),
+                    response.clone(),
+                    inference.usage.as_ref(),
+                );
                 let event = format!(
                     "SRC{}:TURN:{}::MSG::{}",
                     message_event_source_id, turn, response
                 );
                 *last_message_in_chat.lock().unwrap() = Some(event.clone());
                 message_events.lock().unwrap().push(event);
-                println!("\n[{}]: {}", sender_name, response);
-                println!();
+                if !perf.quiet_logs {
+                    println!("\n[{}]: {}", sender_name, response);
+                    println!();
+                }
 
                 // Forward the completed turn to the overview chat room.
                 if let (Some(tx), Some(room_id)) = (&chat_turn_tx, &chat_room_id) {
@@ -410,7 +452,32 @@ pub async fn start_conversation_loop(
                     )
                 };
 
-                if let Err(e) = crate::web::send_conversation_message(
+                if perf.async_http {
+                    let endpoint = endpoint.clone();
+                    let sender_name_http = sender_name.clone();
+                    let receiver_name_http = receiver_name.clone();
+                    let effective_topic_http = effective_topic.clone();
+                    let message_for_chat_http = message_for_chat.clone();
+                    let run_context_http = run_context.clone();
+                    let ledger_http = ledger.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = crate::web::send_conversation_message(
+                            &endpoint,
+                            sender_id,
+                            &sender_name_http,
+                            receiver_id,
+                            &receiver_name_http,
+                            &effective_topic_http,
+                            &message_for_chat_http,
+                            run_context_http.as_ref(),
+                            ledger_http.as_ref(),
+                        )
+                        .await
+                        {
+                            eprintln!("[HTTP] Failed to send message: {}", e);
+                        }
+                    });
+                } else if let Err(e) = crate::web::send_conversation_message(
                     &endpoint,
                     sender_id,
                     &sender_name,
@@ -426,22 +493,26 @@ pub async fn start_conversation_loop(
                     eprintln!("[HTTP] Failed to send message: {}", e);
                 }
 
-                let evaluator_outputs = match run_evaluator_sidecars_for_message(
-                    sidecars.as_ref(),
-                    &response,
-                    ollama_host.as_str(),
-                    &endpoint,
-                    run_context.as_ref(),
-                    selected_model.as_deref(),
-                    ollama_stop_epoch.clone(),
-                    true,
-                    ledger.as_ref(),
-                    app_state.clone(),
-                )
-                .await
-                {
-                    Ok(outputs) => outputs,
-                    Err(()) => break,
+                let evaluator_outputs = if sidecars.scheduling.should_run_evaluators(turn) {
+                    match run_evaluator_sidecars_for_message(
+                        sidecars.as_ref(),
+                        &response,
+                        ollama_host.as_str(),
+                        &endpoint,
+                        run_context.as_ref(),
+                        selected_model.as_deref(),
+                        ollama_stop_epoch.clone(),
+                        true,
+                        ledger.as_ref(),
+                        app_state.clone(),
+                    )
+                    .await
+                    {
+                        Ok(outputs) => outputs,
+                        Err(()) => break,
+                    }
+                } else {
+                    Vec::new()
                 };
 
                 if let (Some(tx), Some(room_id)) = (&chat_turn_tx, &chat_room_id) {
@@ -479,7 +550,9 @@ pub async fn start_conversation_loop(
         }
 
         if turn > 50 {
-            println!("\n[Conversation reached safety limit of 50 turns]");
+            if !perf.quiet_logs {
+                println!("\n[Conversation reached safety limit of 50 turns]");
+            }
             break;
         }
     }
@@ -488,7 +561,9 @@ pub async fn start_conversation_loop(
         "Conversation Ended: {} ↔ {}\nTotal turns: {}",
         agent_a_name, agent_b_name, turn
     );
-    println!("\n{}", end_message);
+    if !perf.quiet_logs {
+        println!("\n{}", end_message);
+    }
 
     if let Some(ref l) = ledger {
         let _ = l.append_with_hashes(
@@ -501,7 +576,31 @@ pub async fn start_conversation_loop(
         );
     }
 
-    if let Err(e) = crate::web::send_conversation_message(
+    if perf.async_http {
+        let endpoint = endpoint.clone();
+        let conversation_manager_name = conversation_manager_name.clone();
+        let topics_summary = topics_summary.clone();
+        let end_message_http = end_message.clone();
+        let run_context = run_context.clone();
+        let ledger = ledger.clone();
+        tokio::spawn(async move {
+            if let Err(e) = crate::web::send_conversation_message(
+                &endpoint,
+                0,
+                &conversation_manager_name,
+                0,
+                "System",
+                &topics_summary,
+                &end_message_http,
+                run_context.as_ref(),
+                ledger.as_ref(),
+            )
+            .await
+            {
+                eprintln!("[HTTP] Failed to send conversation end message: {}", e);
+            }
+        });
+    } else if let Err(e) = crate::web::send_conversation_message(
         &endpoint,
         0,
         &conversation_manager_name,

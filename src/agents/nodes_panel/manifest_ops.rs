@@ -85,6 +85,7 @@ impl AMSAgents {
                             "conversation_topic_source": w.conversation_topic_source,
                             "manager_node": w.manager_node,
                             "topic_node": w.topic_node,
+                            "partner_worker": w.partner_worker,
                         }),
                     ),
                     NodePayload::Evaluator(e) => (
@@ -243,6 +244,7 @@ impl AMSAgents {
                         .to_string();
                     w.manager_node = json_opt_usize(&node.config, "manager_node");
                     w.topic_node = json_opt_usize(&node.config, "topic_node");
+                    w.partner_worker = json_opt_usize(&node.config, "partner_worker");
                 }
                 (NodePayload::Evaluator(e), "evaluator") => {
                     e.name = node.config["name"].as_str().unwrap_or(&e.name).to_string();
