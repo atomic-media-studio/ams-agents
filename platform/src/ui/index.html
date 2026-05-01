@@ -29,48 +29,6 @@
         <div class="row"><span class="k">API Version</span><span id="rustVersion" class="v">-</span></div>
       </article>
 
-      <article class="card cap-card">
-        <h2>
-          Capabilities
-          <button type="button" id="capToggle" class="toggle-btn" aria-expanded="true" aria-controls="capBody">&#x25B4;</button>
-        </h2>
-        <div id="capBody">
-        <div class="row"><span class="k">Endpoints</span><span id="rustEndpoints" class="v">-</span></div>
-        <div class="ep-list">
-          <div class="ep-row">
-            <span class="badge get">GET</span>
-            <span class="ep-path">/api/health</span>
-            <button type="button" class="ep-btn" data-ep-id="epHealth">Call</button>
-          </div>
-          <pre id="epHealth" class="ep-res"></pre>
-          <div class="ep-row">
-            <span class="badge get">GET</span>
-            <span class="ep-path">/api/rust/health</span>
-            <button type="button" class="ep-btn" data-ep-id="epRustHealth">Call</button>
-          </div>
-          <pre id="epRustHealth" class="ep-res"></pre>
-          <div class="ep-row">
-            <span class="badge get">GET</span>
-            <span class="ep-path">/api/rust/capabilities</span>
-            <button type="button" class="ep-btn" data-ep-id="epCaps">Call</button>
-          </div>
-          <pre id="epCaps" class="ep-res"></pre>
-          <div class="ep-row">
-            <span class="badge post">POST</span>
-            <span class="ep-path">/api/rust/bridge/ping</span>
-            <button type="button" class="ep-btn" data-ep-id="epPing">Call</button>
-          </div>
-          <pre id="epPing" class="ep-res"></pre>
-          <div class="ep-row">
-            <span class="badge get">GET</span>
-            <span class="ep-path">/api/rust/app/status</span>
-            <button type="button" class="ep-btn" data-ep-id="epAppStatus">Call</button>
-          </div>
-          <pre id="epAppStatus" class="ep-res"></pre>
-        </div>
-        </div>
-      </article>
-
       <article class="card">
         <h2>Bridge Ping</h2>
         <div class="row"><span class="k">Last Echo</span><span id="pingEcho" class="v">-</span></div>

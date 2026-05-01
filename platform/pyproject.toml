@@ -13,6 +13,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "pytest>=8.3.0",
+  "mkdocs-material>=9.5",
+  "mkdocstrings[python]>=0.25",
+  "mkdocs-swagger-ui-tag>=0.6",
 ]
 
 [tool.uv]

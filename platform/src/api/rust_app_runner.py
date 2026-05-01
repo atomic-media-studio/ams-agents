@@ -95,6 +95,9 @@ class RustAppRunner:
 
             env = os.environ.copy()
             env.setdefault("AMS_WEB_ENABLED", "true")
+            # When platform runs in Docker and Rust runs on host, Rocket must bind
+            # beyond loopback so the container can reach it via host.docker.internal.
+            env.setdefault("ROCKET_ADDRESS", "0.0.0.0")
 
             self._append_log("\n$ AMS_WEB_ENABLED=true apps/ams-agents/target/debug/ams-agents\n")
             process = await asyncio.create_subprocess_exec(

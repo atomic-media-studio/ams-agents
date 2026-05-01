@@ -43,57 +43,9 @@ async function refreshBridgeCards() {
   try {
     const caps = await readJson("/api/rust/capabilities");
     $("rustVersion").textContent = caps.api_version || "-";
-    $("rustEndpoints").textContent = Array.isArray(caps.endpoints)
-      ? String(caps.endpoints.length)
-      : "-";
   } catch (_err) {
     $("rustVersion").textContent = "-";
-    $("rustEndpoints").textContent = "-";
   }
-}
-
-// --- Endpoint triggers ---
-const EP_DEFS = [
-  { id: "epHealth",    method: "GET",  path: "/api/health" },
-  { id: "epRustHealth",method: "GET",  path: "/api/rust/health" },
-  { id: "epCaps",      method: "GET",  path: "/api/rust/capabilities" },
-  { id: "epPing",      method: "POST", path: "/api/rust/bridge/ping",
-    body: { message: "hello from capabilities panel" } },
-  { id: "epAppStatus", method: "GET",  path: "/api/rust/app/status" },
-];
-
-async function callEndpoint(def) {
-  const el = $(def.id);
-  el.textContent = "…";
-  el.classList.add("visible");
-  try {
-    const opts = def.method === "POST"
-      ? { method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(def.body || {}) }
-      : undefined;
-    const data = await readJson(def.path, opts);
-    el.textContent = JSON.stringify(data, null, 2);
-  } catch (err) {
-    el.textContent = String(err);
-  }
-}
-
-function wireCapToggle() {
-  const btn = $("capToggle");
-  const body = $("capBody");
-  btn.addEventListener("click", () => {
-    const expanded = btn.getAttribute("aria-expanded") === "true";
-    btn.setAttribute("aria-expanded", String(!expanded));
-    body.style.display = expanded ? "none" : "";
-  });
-}
-
-function wireEndpointButtons() {
-  document.querySelectorAll(".ep-btn").forEach((btn) => {
-    const id = btn.dataset.epId;
-    const def = EP_DEFS.find((d) => d.id === id);
-    if (def) btn.addEventListener("click", () => callEndpoint(def));
-  });
 }
 
 async function pingRust() {
@@ -166,7 +118,5 @@ async function refreshAll() {
   await refreshRustApp();
 }
 
-wireCapToggle();
-wireEndpointButtons();
 refreshAll();
 setInterval(refreshRustApp, 2000);

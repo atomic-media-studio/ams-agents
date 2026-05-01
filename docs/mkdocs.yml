@@ -1,0 +1,47 @@
+site_name: ARPSCI-Ecosystem Docs
+site_description: Engineering guide for the ARPSCI platform and ams-agents app.
+docs_dir: src
+
+theme:
+  name: material
+  palette:
+    scheme: default
+    primary: custom
+    accent: custom
+  font:
+    text: Inter
+    code: JetBrains Mono
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.indexes
+    - content.code.copy
+    - toc.follow
+
+extra_css:
+  - overrides/extra.css
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: ["../platform/src"]
+          options:
+            show_source: false
+            show_root_heading: true
+            heading_level: 3
+
+nav:
+  - Overview: index.md
+  - Architecture: architecture.md
+  - Startup and UI Flow: startup-and-ui.md
+  - Conversation Engine: conversation-engine.md
+  - Runs and Audit Trail: runs-and-audit.md
+  - Python Runtime Management: python-runtimes.md
+  - Security and HTTP Policy: security-and-http-policy.md
+  - Configuration Reference: configuration.md
+  - Platform API:
+    - Routes Overview: api/platform.md
+    - Rust Bridge Client: api/rust-bridge.md
+    - OpenAPI Explorer: api/openapi.md

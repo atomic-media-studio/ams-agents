@@ -11,7 +11,25 @@ Monorepo for the ARPSCI-Ecosystem.
 - `docs`: Architecture and ecosystem runbooks.
 - `metrics`, `runs`, `runtimes`: Existing runtime data directories kept in place.
 
-## Rust app (ams-agents)
+# Reproduce
+
+```sh
+# Terminal 1:
+cd ./arp/platform
+uv sync --dev
+uv run uvicorn src.host_runner_main:app --host 127.0.0.1 --port 8090
+
+# Terminal 2:
+cd ./arp
+docker compose up --build
+
+# Visit:
+# http://localhost:8080/ (platform dashboard)
+# http://localhost:8081/ (docs)
+```
+
+
+## Rust application
 
 ```sh
 # Build workspace
@@ -73,8 +91,56 @@ Dashboard static files:
 
 ## Docker (ongoing)
 
+For Rust app compile/start/stop from the dashboard while platform runs in Docker,
+run the host runner on your machine (not in a container):
+
 ```sh
-docker compose up --build platform
+cd platform
+uv sync --dev
+uv run uvicorn src.host_runner_main:app --host 0.0.0.0 --port 8090
 ```
 
-See `docs/ecosystem.md` and `docs/architecture.md` for details.
+Host runner endpoint:
+
+- `http://127.0.0.1:8090/health`
+
+Why `0.0.0.0`? Docker reaches host services via `host.docker.internal`, not host
+loopback (`127.0.0.1`). If host runner is bound only to `127.0.0.1`, the platform
+container cannot connect.
+
+Bring up the platform and docs site together:
+
+```sh
+docker compose up --build
+```
+
+Or individually:
+
+```sh
+docker compose up --build platform   # FastAPI platform
+docker compose up --build docs       # MkDocs documentation
+```
+
+Visit in browser:
+
+- Platform dashboard: `http://localhost:8080/`
+- API docs (OpenAPI): `http://localhost:8080/docs`
+- Documentation site: `http://localhost:8081/`
+
+With Docker, platform app-control routes are proxied to the host runner
+(`ARP_RUST_APP_RUNNER_BASE_URL=http://host.docker.internal:8090`), so Rust apps
+compile and run on the host.
+
+When started from the host runner, the Rust app is launched with
+`ROCKET_ADDRESS=0.0.0.0` so the platform container can reach
+`http://host.docker.internal:8000`.
+
+To build and serve docs locally without Docker:
+
+```sh
+cd platform
+uv sync --dev
+uv run mkdocs serve --config-file ../docs/mkdocs.yml
+```
+
+Docs will be available at `http://127.0.0.1:8000/`.
