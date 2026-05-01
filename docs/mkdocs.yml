@@ -35,7 +35,7 @@ plugins:
 nav:
   - Overview: index.md
   - Architecture: architecture.md
-  - Platform API:
-    - Platform Routes: api/platform.md
+  - API Reference:
+    - Platform API: api/platform.md
     - Host Runner API: api/host-runner.md
     - OpenAPI Explorer: api/openapi.md
