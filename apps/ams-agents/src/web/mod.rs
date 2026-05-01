@@ -524,6 +524,25 @@ struct HealthResponse {
 }
 
 #[derive(Serialize)]
+struct CapabilitiesResponse {
+    service: &'static str,
+    api_version: &'static str,
+    endpoints: Vec<&'static str>,
+}
+
+#[derive(Deserialize)]
+struct BridgePingRequest {
+    message: Option<String>,
+}
+
+#[derive(Serialize)]
+struct BridgePingResponse {
+    status: &'static str,
+    service: &'static str,
+    echoed_message: String,
+}
+
+#[derive(Serialize)]
 struct OutgoingHttpLogResponse {
     total: usize,
     entries: Vec<OutgoingHttpLogEntry>,
@@ -603,6 +622,27 @@ fn health() -> Json<HealthResponse> {
     Json(HealthResponse {
         status: "ok",
         service: "ams-agents",
+    })
+}
+
+#[rocket::get("/capabilities")]
+fn capabilities() -> Json<CapabilitiesResponse> {
+    Json(CapabilitiesResponse {
+        service: "ams-agents",
+        api_version: "v1",
+        endpoints: vec!["/api/health", "/api/capabilities", "/api/bridge/ping"],
+    })
+}
+
+#[rocket::post("/bridge/ping", format = "json", data = "<payload>")]
+fn bridge_ping(payload: Json<BridgePingRequest>) -> Json<BridgePingResponse> {
+    Json(BridgePingResponse {
+        status: "ok",
+        service: "ams-agents",
+        echoed_message: payload
+            .message
+            .clone()
+            .unwrap_or_else(|| "ping".to_string()),
     })
 }
 
@@ -745,7 +785,13 @@ fn build_rocket(config: &WebConfig) -> Rocket<Build> {
 
     rocket::custom(figment).mount(
         "/api",
-        routes![health, outgoing_http_log_route, outgoing_http_log_live_route],
+        routes![
+            health,
+            capabilities,
+            bridge_ping,
+            outgoing_http_log_route,
+            outgoing_http_log_live_route
+        ],
     )
 }
 

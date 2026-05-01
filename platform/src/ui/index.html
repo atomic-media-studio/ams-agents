@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ARP Platform</title>
+  <link rel="stylesheet" href="/ui/styles.css" />
+</head>
+<body>
+  <main class="wrap">
+    <section class="top">
+      <p class="eyebrow">ARPSCI-Ecosystem Platform</p>
+      <h1>Ecosystem Dashboard</h1>
+      <p class="subtitle">FastAPI frontend for Rust Rocket bridge status.</p>
+    </section>
+
+    <section class="grid">
+      <article class="card">
+        <h2>Platform</h2>
+        <div class="row"><span class="k">Service</span><span id="platformService" class="v">-</span></div>
+        <div class="row"><span class="k">Status</span><span id="platformStatus" class="v">-</span></div>
+        <div class="row"><span class="k">Time</span><span id="platformTime" class="v mono">-</span></div>
+      </article>
+
+      <article class="card">
+        <h2>Rust Bridge</h2>
+        <div class="row"><span class="k">Service</span><span id="rustService" class="v">-</span></div>
+        <div class="row"><span class="k">Status</span><span id="rustStatus" class="v">-</span></div>
+        <div class="row"><span class="k">API Version</span><span id="rustVersion" class="v">-</span></div>
+      </article>
+
+      <article class="card cap-card">
+        <h2>Capabilities</h2>
+        <div class="row"><span class="k">Endpoints</span><span id="rustEndpoints" class="v">-</span></div>
+        <div class="ep-list">
+          <div class="ep-row">
+            <span class="badge get">GET</span>
+            <span class="ep-path">/api/health</span>
+            <button type="button" class="ep-btn" data-ep-id="epHealth">Call</button>
+          </div>
+          <pre id="epHealth" class="ep-res"></pre>
+          <div class="ep-row">
+            <span class="badge get">GET</span>
+            <span class="ep-path">/api/rust/health</span>
+            <button type="button" class="ep-btn" data-ep-id="epRustHealth">Call</button>
+          </div>
+          <pre id="epRustHealth" class="ep-res"></pre>
+          <div class="ep-row">
+            <span class="badge get">GET</span>
+            <span class="ep-path">/api/rust/capabilities</span>
+            <button type="button" class="ep-btn" data-ep-id="epCaps">Call</button>
+          </div>
+          <pre id="epCaps" class="ep-res"></pre>
+          <div class="ep-row">
+            <span class="badge post">POST</span>
+            <span class="ep-path">/api/rust/bridge/ping</span>
+            <button type="button" class="ep-btn" data-ep-id="epPing">Call</button>
+          </div>
+          <pre id="epPing" class="ep-res"></pre>
+          <div class="ep-row">
+            <span class="badge get">GET</span>
+            <span class="ep-path">/api/rust/app/status</span>
+            <button type="button" class="ep-btn" data-ep-id="epAppStatus">Call</button>
+          </div>
+          <pre id="epAppStatus" class="ep-res"></pre>
+        </div>
+      </article>
+
+      <article class="card">
+        <h2>Bridge Ping</h2>
+        <div class="row"><span class="k">Last Echo</span><span id="pingEcho" class="v">-</span></div>
+        <div class="actions">
+          <button id="refreshBtn" type="button">Refresh</button>
+          <button id="pingBtn" type="button">Ping Rust</button>
+        </div>
+      </article>
+
+      <article class="card">
+        <h2>Rust App Runtime</h2>
+        <div class="row"><span class="k">Process</span><span id="rustProcStatus" class="v">-</span></div>
+        <div class="row"><span class="k">PID</span><span id="rustProcPid" class="v mono">-</span></div>
+        <div class="row"><span class="k">Target Dir</span><span id="rustTargetDir" class="v mono">-</span></div>
+        <div class="actions">
+          <button id="rustStartBtn" type="button">Start App</button>
+          <button id="rustStopBtn" type="button">Stop App</button>
+        </div>
+      </article>
+
+      <article class="card">
+        <h2>Rust Build</h2>
+        <div class="row"><span class="k">Compile Status</span><span id="rustCompileStatus" class="v">-</span></div>
+        <div class="actions">
+          <button id="rustCompileBtn" type="button">Compile ams-agents</button>
+        </div>
+        <div id="rustLog" class="log mono"></div>
+      </article>
+    </section>
+  </main>
+  <script src="/ui/app.js"></script>
+</body>
+</html>

@@ -1,4 +1,4 @@
-#![doc = include_str!("../docs/README.md")]
+#![doc = include_str!("../../../docs/README.md")]
 
 pub mod app_state;
 pub mod agents;

@@ -3,6 +3,16 @@ target/
 
 Cargo.lock
 
+# Python platform artifacts
+platform/.venv/
+platform/.pytest_cache/
+platform/.mypy_cache/
+platform/__pycache__/
+
+# Built binaries staging (keep marker)
+binaries/*
+!binaries/.gitkeep
+
 python/
 
 .master_hash
@@ -20,3 +30,5 @@ metrics/overview_chat.sqlite
 exp_*/
 
 docs/book/
+
+__pycache__/
