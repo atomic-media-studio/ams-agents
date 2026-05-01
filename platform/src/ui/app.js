@@ -78,6 +78,16 @@ async function callEndpoint(def) {
   }
 }
 
+function wireCapToggle() {
+  const btn = $("capToggle");
+  const body = $("capBody");
+  btn.addEventListener("click", () => {
+    const expanded = btn.getAttribute("aria-expanded") === "true";
+    btn.setAttribute("aria-expanded", String(!expanded));
+    body.style.display = expanded ? "none" : "";
+  });
+}
+
 function wireEndpointButtons() {
   document.querySelectorAll(".ep-btn").forEach((btn) => {
     const id = btn.dataset.epId;
@@ -156,5 +166,7 @@ async function refreshAll() {
   await refreshRustApp();
 }
 
+wireCapToggle();
+wireEndpointButtons();
 refreshAll();
 setInterval(refreshRustApp, 2000);

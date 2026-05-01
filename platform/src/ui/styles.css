@@ -122,6 +122,8 @@ button:hover {
 }
 
 .cap-card { grid-column: 1 / -1; }
+.toggle-btn { background: none; border: none; cursor: pointer; font-size: 0.85rem; color: var(--muted); padding: 0 0.3rem; margin-left: 0.4rem; line-height: 1; vertical-align: middle; transition: transform 0.2s; }
+.toggle-btn[aria-expanded="false"] { transform: rotate(180deg); }
 .ep-list { display: flex; flex-direction: column; gap: 0.25rem; margin-top: 0.75rem; }
 .ep-row { display: flex; align-items: center; gap: 0.5rem; }
 .badge { font-size: 0.65rem; font-weight: 700; letter-spacing: 0.04em; padding: 0.15rem 0.4rem; border-radius: 3px; color: #fff; flex-shrink: 0; }

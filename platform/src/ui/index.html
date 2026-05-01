@@ -30,7 +30,11 @@
       </article>
 
       <article class="card cap-card">
-        <h2>Capabilities</h2>
+        <h2>
+          Capabilities
+          <button type="button" id="capToggle" class="toggle-btn" aria-expanded="true" aria-controls="capBody">&#x25B4;</button>
+        </h2>
+        <div id="capBody">
         <div class="row"><span class="k">Endpoints</span><span id="rustEndpoints" class="v">-</span></div>
         <div class="ep-list">
           <div class="ep-row">
@@ -63,6 +67,7 @@
             <button type="button" class="ep-btn" data-ep-id="epAppStatus">Call</button>
           </div>
           <pre id="epAppStatus" class="ep-res"></pre>
+        </div>
         </div>
       </article>
 
