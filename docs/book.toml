@@ -1,9 +1,9 @@
 [book]
-title = "ARPSCI-Ecosystem Docs"
+title = "ARPSCI Docs"
 authors = ["ARPSCI Team"]
 language = "en"
 src = "src"
 
 [output.html]
 default-theme = "light"
-git-repository-url = ""
+git-repository-url = "https://github.com/arpsci/arp"

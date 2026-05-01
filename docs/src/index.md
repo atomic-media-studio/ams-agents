@@ -1,24 +1,10 @@
-# ARPSCI Platform and App Control Docs
+# ARPSCI Documentation
 
-This documentation is intentionally scoped to platform API and app lifecycle control.
+This documentation is related to the ARPSCI Platform and Applications. 
 
-Current focus:
+<!-- 
+Platform API
 
-- FastAPI platform routes exposed on `:8080`
-- host runner routes exposed on `:8090`
-- compile/start/stop/status flow for `apps/ams-agents`
-- Docker-to-host networking requirements for app control
-
-Out of scope for this doc set:
-
-- conversation internals,
-- runtime implementation deep dives,
-- legacy Rust Bridge route usage.
-
-Use these pages in order:
-
-1. App Control Architecture
-2. App Control Flow
-3. Platform Routes
-4. Host Runner API
-5. OpenAPI Explorer
+1. [Platform](api/platform.md)
+2. [Host Runner API](api/host-runner.md)
+3. [OpenAPI Explorer](api/openapi.md) -->

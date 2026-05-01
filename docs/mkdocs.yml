@@ -1,5 +1,5 @@
-site_name: ARPSCI-Ecosystem Docs
-site_description: Engineering guide for the ARPSCI platform and ams-agents app.
+site_name: ARPSCI Ecosystem Docs
+site_description: Documentation for ARPSCI platforms and applications.
 docs_dir: src
 
 theme:
@@ -34,8 +34,7 @@ plugins:
 
 nav:
   - Overview: index.md
-  - App Control Architecture: architecture.md
-  - App Control Flow: startup-and-ui.md
+  - Architecture: architecture.md
   - Platform API:
     - Platform Routes: api/platform.md
     - Host Runner API: api/host-runner.md

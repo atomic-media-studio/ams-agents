@@ -16,6 +16,9 @@ Monorepo for the ARPSCI-Ecosystem.
 # Reproduce
 
 ```sh
+# Automated
+./run_all.sh
+
 # Terminal 1:
 cd ./arp/platform
 uv sync --dev

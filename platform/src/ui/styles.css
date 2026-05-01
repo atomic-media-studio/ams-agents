@@ -143,6 +143,7 @@ button:hover {
   overflow: auto;
   padding: 8px;
   white-space: pre-wrap;
+  font-size: 8px;
 }
 
 @media (max-width: 860px) {
