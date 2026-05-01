@@ -1,38 +1,43 @@
-# Startup and UI Flow
+# App Control Flow
 
-## Startup path
+## Local development flow
 
-The binary startup is still compact, but there are a few important details worth keeping in mind:
+1. Start host runner on host:
 
-1. Create a multi-threaded Tokio runtime.
-2. Keep that runtime alive on a background thread.
-3. Optionally launch the embedded Rocket server when `AMS_WEB_ENABLED` is enabled.
-4. Start the egui native app with a `900x840` initial viewport and the window title `arp-cogsci`.
+   ```sh
+   cd platform
+   uv sync --dev
+   uv run uvicorn src.host_runner_main:app --host 0.0.0.0 --port 8090
+   ```
 
-The UI shell receives only the Tokio handle; everything else is built inside `AMSAgentsApp::new`.
+2. Start platform and docs in Docker:
 
-## Frame loop responsibilities
+   ```sh
+   docker compose up --build
+   ```
 
-`AMSAgentsApp` owns three kinds of work on each frame:
+3. Open dashboard at `http://localhost:8080/`.
 
-1. Apply shell presentation once.
-   Today that means the Catppuccin Latte theme plus the Phosphor icon font.
-2. Enforce the vault gate.
-   If the app is locked, the frame renders only the unlock screen and returns early.
-3. Render the live workspace.
-   Once unlocked, the app shows a top lock bar, refreshes Ollama models on first use, and delegates the main body to the graph workspace renderer.
+## Dashboard lifecycle actions
 
-The app-level UI state is also kept here. It includes:
+The dashboard uses these platform routes:
 
-- Ollama model list and test status,
-- the manifest export path field,
-- the Python panel form state and background-operation results.
+- `GET /api/rust/app/status`
+- `POST /api/rust/app/compile`
+- `POST /api/rust/app/start`
+- `POST /api/rust/app/stop`
 
-## UI ownership model
+Platform forwards those calls to host runner.
 
-The shell is intentionally thin.
+## Runtime behavior
 
-- `AMSAgentsApp` handles frame lifecycle, unlock/lock behavior, and one-time shell setup.
-- `AMSAgents` renders the actual workspace and owns behavior such as run control, model settings, metrics settings, HTTP policy toggles, Python runtime actions, and Overview chat forwarding.
+- **Compile** runs `cargo build -p ams-agents --target-dir target` in `apps/ams-agents`.
+- **Start** launches `apps/ams-agents/target/debug/ams-agents`.
+- **Stop** terminates the app process group.
+- **Status** returns running state, PID, target dir, and log tail.
 
-That boundary matters when changing the UI: if a feature needs to survive across async tasks or active runs, it usually belongs in `AMSAgents`, not in the ephemeral frame-local widget code.
+## Common failure mode
+
+If dashboard shows `host-runner-unreachable`, host runner is usually bound to
+`127.0.0.1`. Bind it to `0.0.0.0` so Docker can reach it via
+`host.docker.internal`.

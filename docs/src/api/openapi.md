@@ -1,9 +1,10 @@
 # OpenAPI Explorer
 
-Live interactive reference for the FastAPI platform. The explorer below is served
-directly from the running platform instance at `http://127.0.0.1:8080/openapi.json`.
+Live interactive reference for the platform API. The explorer below is served
+from `http://127.0.0.1:8080/openapi.json`.
 
 !!! note
-    The platform must be running locally (or in Docker) for the explorer to load.
+    Platform must be running for the explorer to load. Host runner has its own
+    schema at `http://127.0.0.1:8090/openapi.json`.
 
 <swagger-ui src="http://127.0.0.1:8080/openapi.json" />

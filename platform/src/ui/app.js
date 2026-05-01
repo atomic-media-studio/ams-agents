@@ -30,36 +30,6 @@ async function refreshBridgeCards() {
     $("platformService").textContent = "arp-platform";
     setStatus($("platformStatus"), String(err), false);
   }
-
-  try {
-    const rust = await readJson("/api/rust/health");
-    $("rustService").textContent = rust.service || "ams-agents";
-    setStatus($("rustStatus"), rust.status || "ok", true);
-  } catch (err) {
-    $("rustService").textContent = "ams-agents";
-    setStatus($("rustStatus"), String(err), false);
-  }
-
-  try {
-    const caps = await readJson("/api/rust/capabilities");
-    $("rustVersion").textContent = caps.api_version || "-";
-  } catch (_err) {
-    $("rustVersion").textContent = "-";
-  }
-}
-
-async function pingRust() {
-  try {
-    const payload = { message: "hello from dashboard" };
-    const data = await readJson("/api/rust/bridge/ping", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    $("pingEcho").textContent = data.echoed_message || "ok";
-  } catch (err) {
-    $("pingEcho").textContent = String(err);
-  }
 }
 
 async function refreshRustApp() {
@@ -108,7 +78,6 @@ async function stopRustApp() {
 }
 
 $("refreshBtn").addEventListener("click", refreshBridgeCards);
-$("pingBtn").addEventListener("click", pingRust);
 $("rustCompileBtn").addEventListener("click", compileRustApp);
 $("rustStartBtn").addEventListener("click", startRustApp);
 $("rustStopBtn").addEventListener("click", stopRustApp);

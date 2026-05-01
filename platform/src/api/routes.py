@@ -1,7 +1,6 @@
 from fastapi import APIRouter, HTTPException
 import httpx
 
-from src.bridge.runner import bridge_client
 from src.api.rust_app_runner import rust_app_runner
 from src.config.settings import settings
 
@@ -80,31 +79,6 @@ async def _runner_post(path: str) -> dict:
 @router.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok", "service": "arp-platform"}
-
-
-@router.get("/rust/health")
-async def rust_health() -> dict:
-    try:
-        return await bridge_client.health()
-    except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail=f"rust-health-error: {exc}") from exc
-
-
-@router.get("/rust/capabilities")
-async def rust_capabilities() -> dict:
-    try:
-        return await bridge_client.capabilities()
-    except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail=f"rust-capabilities-error: {exc}") from exc
-
-
-@router.post("/rust/bridge/ping")
-async def rust_bridge_ping(payload: dict) -> dict:
-    message = str(payload.get("message", "ping"))
-    try:
-        return await bridge_client.bridge_ping(message)
-    except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail=f"rust-bridge-ping-error: {exc}") from exc
 
 
 @router.get("/rust/app/status")

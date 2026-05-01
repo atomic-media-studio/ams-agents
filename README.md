@@ -56,7 +56,7 @@ Once the platform is running, open the dashboard at:
 http://127.0.0.1:8080/
 ```
 
-The dashboard lets you inspect service health, view and trigger all API endpoints, and compile / start / stop the Rust app from the browser.
+The dashboard lets you inspect platform health and compile / start / stop the Rust app from the browser.
 
 ## Python platform (FastAPI + uv)
 
@@ -70,9 +70,6 @@ Platform endpoints:
 
 - `http://127.0.0.1:8080/`
 - `http://127.0.0.1:8080/api/health`
-- `http://127.0.0.1:8080/api/rust/health`
-- `http://127.0.0.1:8080/api/rust/capabilities`
-- `http://127.0.0.1:8080/api/rust/bridge/ping`
 - `http://127.0.0.1:8080/api/rust/app/status`
 - `POST http://127.0.0.1:8080/api/rust/app/compile`
 - `POST http://127.0.0.1:8080/api/rust/app/start`

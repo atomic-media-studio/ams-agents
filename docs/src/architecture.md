@@ -1,37 +1,39 @@
-# Architecture
+# App Control Architecture
 
-ARP is organized around a thin desktop shell and a stateful orchestration core.
+The platform now follows a two-service control model:
 
-## High-level modules
+1. **Platform API** (`platform/src/main.py`, port `8080`)
+2. **Host Runner API** (`platform/src/host_runner_main.py`, port `8090`)
 
-- `src/main.rs`: creates the Tokio runtime, optionally launches Rocket, and boots the egui app.
-- `src/ui/mod.rs`: owns the top-level `AMSAgentsApp`, vault gate, theme/font setup, and per-frame routing into the workspace UI.
-- `src/agents/`: owns the graph state, run orchestration, conversation loops, prompt assembly, and evaluator/researcher sidecars.
-- `src/ollama/`: fetches model tags and streams chat inference while recording timing metrics.
-- `src/run/`: writes `manifest.json`, `events.jsonl`, and `summary.json` for each run.
-- `src/python/`: creates and manages portable venvs, plus traced Python task execution helpers.
-- `src/vault.rs`: verifies the master password and provides an encrypted in-memory blob container.
-- `src/web/mod.rs`: enforces outbound HTTP guardrails, posts optional webhooks, and serves the embedded API when enabled.
-- `src/metrics/`: writes inference and turn timing events to JSONL through a replaceable sink.
+The platform serves the web UI and proxies app lifecycle actions to the host runner.
+The host runner executes `cargo` and the Rust app process on the host machine.
 
-## Data roots
+## Components
 
-- `runs/`: one directory per run bundle, including manifests, ledgers, summaries, and Python task sidecars.
-- `runtimes/python/`: the runtime registry plus one directory per managed venv.
-- `metrics/timings.jsonl`: default sink for inference and turn timing events.
-- `runs/.master_hash`: optional default location for the vault Argon2id PHC hash.
+- `platform/src/api/routes.py`
+	- Public API for dashboard/UI.
+	- Exposes `/api/health` and `/api/rust/app/*`.
+	- Proxies lifecycle calls to host runner when `ARP_RUST_APP_RUNNER_BASE_URL` is set.
+- `platform/src/api/rust_app_runner.py`
+	- Process manager for `ams-agents`.
+	- Compiles in `apps/ams-agents` using local target dir.
+	- Starts/stops the binary and returns status/log tail.
+- `platform/src/host_runner_main.py`
+	- Host-only API for `/rust/app/status|compile|start|stop`.
+	- Used when platform runs in Docker but app must run on host.
+- `docker-compose.yml`
+	- Runs `platform` and `docs` containers.
+	- Maps `host.docker.internal` to host gateway.
 
-## Core object wiring
+## Network model
 
-The main runtime object is `AMSAgents`, constructed by `AMSAgentsApp`. It keeps together the state that has to span UI frames and async run execution:
+- Browser -> `localhost:8080` -> platform container
+- Platform container -> `host.docker.internal:8090` -> host runner
+- Host runner -> local filesystem/processes -> `apps/ams-agents`
 
-- the Tokio `Handle`,
-- `AppState`, which currently owns the live metrics sink,
-- Ollama host/model settings,
-- outbound HTTP policy flags,
-- active run context and manifest,
-- the append-only event ledger for the current run,
-- the node-graph workspace state,
-- chat bridge channels used to forward agent turns into the Overview chat UI.
+When host runner starts the Rust app, it sets:
 
-That split is deliberate: `AMSAgentsApp` is responsible for frame lifecycle and vault gating, while `AMSAgents` owns the application behavior that must survive across frames and background tasks.
+- `AMS_WEB_ENABLED=true`
+- `ROCKET_ADDRESS=0.0.0.0`
+
+This allows the platform container to reach Rust app HTTP endpoints on host port `8000` if needed.

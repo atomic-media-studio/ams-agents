@@ -34,14 +34,9 @@ plugins:
 
 nav:
   - Overview: index.md
-  - Architecture: architecture.md
-  - Startup and UI Flow: startup-and-ui.md
-  - Conversation Engine: conversation-engine.md
-  - Runs and Audit Trail: runs-and-audit.md
-  - Python Runtime Management: python-runtimes.md
-  - Security and HTTP Policy: security-and-http-policy.md
-  - Configuration Reference: configuration.md
+  - App Control Architecture: architecture.md
+  - App Control Flow: startup-and-ui.md
   - Platform API:
-    - Routes Overview: api/platform.md
-    - Rust Bridge Client: api/rust-bridge.md
+    - Platform Routes: api/platform.md
+    - Host Runner API: api/host-runner.md
     - OpenAPI Explorer: api/openapi.md
