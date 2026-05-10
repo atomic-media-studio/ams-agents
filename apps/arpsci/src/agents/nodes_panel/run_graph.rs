@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use crate::agents::AMSAgents;
+use crate::agents::Arpsci;
 use crate::run::event_ledger::EventLedger;
 use crate::run::manifest::runs_root;
 use super::manifest_ops::sync_evaluator_researcher_activity;
@@ -11,7 +11,7 @@ use super::play_plan::{
     collect_run_play_plan_from_agents,
 };
 
-impl AMSAgents {
+impl Arpsci {
     fn should_log_play_plan() -> bool {
         std::env::var("ARPSCI_LOG_PLAY_PLAN")
             .ok()
@@ -35,6 +35,7 @@ impl AMSAgents {
         self.conversation_loop_handles.clear();
         self.conversation_graph_running
             .store(false, Ordering::Release);
+        self.chat_mode = crate::agents::GlobalChatMode::HumanToAgent;
         *self.last_message_in_chat.lock().unwrap() = None;
         self.conversation_message_events.lock().unwrap().clear();
         self.evaluator_event_queues.lock().unwrap().clear();
@@ -56,6 +57,7 @@ impl AMSAgents {
         // Mark as running immediately so UI can switch Start -> Stop while setup occurs.
         self.conversation_graph_running
             .store(true, Ordering::Release);
+        self.chat_mode = crate::agents::GlobalChatMode::AgentToAgent;
         // Create a fresh agent→chat channel for this run.
         let (chat_tx, chat_rx) = std::sync::mpsc::channel::<crate::agents::AgentChatEvent>();
         self.chat_turn_tx = Some(chat_tx);

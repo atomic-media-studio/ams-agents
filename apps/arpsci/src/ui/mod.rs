@@ -1,4 +1,4 @@
-use crate::agents::AMSAgents;
+use crate::agents::Arpsci;
 use crate::vault::MasterVault;
 use eframe::egui;
 use std::sync::atomic::AtomicBool;
@@ -61,14 +61,14 @@ impl Default for PythonPanelUiState {
 	}
 }
 
-pub(crate) struct AMSAgentsUiState {
+pub(crate) struct ArpsciUiState {
 	pub(crate) ollama: OllamaUiState,
 	pub(crate) agents_workspace_path: String,
 	pub(crate) manifest_status_message: String,
 	pub(crate) python: PythonPanelUiState,
 }
 
-impl Default for AMSAgentsUiState {
+impl Default for ArpsciUiState {
 	fn default() -> Self {
 		Self {
 			ollama: OllamaUiState::default(),
@@ -79,26 +79,99 @@ impl Default for AMSAgentsUiState {
 	}
 }
 
+fn load_first_font_bytes(candidates: &[&str]) -> Option<Vec<u8>> {
+	for path in candidates {
+		if let Ok(bytes) = std::fs::read(path) {
+			return Some(bytes);
+		}
+	}
+	None
+}
+
 fn prepare_shell(
 	ctx: &egui::Context,
-	theme_applied: &mut bool,
+	selected_theme: crate::agents::CatppuccinTheme,
+	last_applied_theme: &mut Option<crate::agents::CatppuccinTheme>,
 	phosphor_fonts_installed: &mut bool,
 ) {
-	if !*theme_applied {
-		catppuccin_egui::set_theme(ctx, catppuccin_egui::LATTE);
-		*theme_applied = true;
+	if *last_applied_theme != Some(selected_theme) {
+		match selected_theme {
+			crate::agents::CatppuccinTheme::Latte => {
+				catppuccin_egui::set_theme(ctx, catppuccin_egui::LATTE)
+			}
+			crate::agents::CatppuccinTheme::Frappe => {
+				catppuccin_egui::set_theme(ctx, catppuccin_egui::FRAPPE)
+			}
+			crate::agents::CatppuccinTheme::Macchiato => {
+				catppuccin_egui::set_theme(ctx, catppuccin_egui::MACCHIATO)
+			}
+			crate::agents::CatppuccinTheme::Mocha => {
+				catppuccin_egui::set_theme(ctx, catppuccin_egui::MOCHA)
+			}
+		}
+		*last_applied_theme = Some(selected_theme);
 	}
 	if !*phosphor_fonts_installed {
 		let mut fonts = ctx.fonts(|f| f.definitions().clone());
 		egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
+
+		let mut appended_fallbacks: Vec<String> = Vec::new();
+		let emoji_color_candidates = [
+			"/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
+			"/usr/share/fonts/noto/NotoColorEmoji.ttf",
+			"/usr/share/fonts/opentype/noto/NotoColorEmoji.ttf",
+			"/usr/local/share/fonts/NotoColorEmoji.ttf",
+		];
+		if let Some(bytes) = load_first_font_bytes(&emoji_color_candidates) {
+			let name = "emoji-fallback-color".to_string();
+			fonts
+				.font_data
+				.insert(name.clone(), egui::FontData::from_owned(bytes).into());
+			appended_fallbacks.push(name);
+		}
+
+		let emoji_text_candidates = [
+			"/usr/share/fonts/truetype/noto/NotoEmoji-Regular.ttf",
+			"/usr/share/fonts/truetype/noto/NotoEmoji-VariableFont_wght.ttf",
+			"/usr/share/fonts/noto/NotoEmoji-Regular.ttf",
+			"/usr/local/share/fonts/NotoEmoji-Regular.ttf",
+		];
+		if let Some(bytes) = load_first_font_bytes(&emoji_text_candidates) {
+			let name = "emoji-fallback-text".to_string();
+			fonts
+				.font_data
+				.insert(name.clone(), egui::FontData::from_owned(bytes).into());
+			appended_fallbacks.push(name);
+		}
+
+		let symbol_candidates = [
+			"/usr/share/fonts/truetype/ancient-scripts/Symbola_hint.ttf",
+			"/usr/share/fonts/truetype/ancient-scripts/Symbola.ttf",
+			"/usr/share/fonts/truetype/unifont/unifont.ttf",
+			"/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+		];
+		if let Some(bytes) = load_first_font_bytes(&symbol_candidates) {
+			let name = "emoji-fallback-symbols".to_string();
+			fonts
+				.font_data
+				.insert(name.clone(), egui::FontData::from_owned(bytes).into());
+			appended_fallbacks.push(name);
+		}
+
+		if let Some(proportional) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
+			proportional.extend(appended_fallbacks.iter().cloned());
+		}
+		if let Some(monospace) = fonts.families.get_mut(&egui::FontFamily::Monospace) {
+			monospace.extend(appended_fallbacks);
+		}
 		ctx.set_fonts(fonts);
 		*phosphor_fonts_installed = true;
 	}
 }
 
 fn refresh_ollama_models_on_startup(
-	ams_agents: &AMSAgents,
-	ui_state: &mut AMSAgentsUiState,
+	ams_agents: &Arpsci,
+	ui_state: &mut ArpsciUiState,
 	ctx: &egui::Context,
 ) {
 	if ui_state.ollama.models.lock().unwrap().is_empty()
@@ -121,34 +194,35 @@ fn refresh_ollama_models_on_startup(
 	}
 }
 
-pub struct AMSAgentsApp {
+pub struct ArpsciApp {
 	vault: MasterVault,
-	ams_agents: AMSAgents,
-	ui_state: AMSAgentsUiState,
-	theme_applied: bool,
+	ams_agents: Arpsci,
+	ui_state: ArpsciUiState,
+	last_applied_theme: Option<crate::agents::CatppuccinTheme>,
 	phosphor_fonts_installed: bool,
 }
 
-impl AMSAgentsApp {
+impl ArpsciApp {
 	pub fn new(rt_handle: Handle) -> Self {
 		Self {
 			vault: MasterVault::new(),
-			ams_agents: AMSAgents::new(rt_handle),
-			ui_state: AMSAgentsUiState {
+			ams_agents: Arpsci::new(rt_handle),
+			ui_state: ArpsciUiState {
 				agents_workspace_path: "runs/agents-workspace.json".to_string(),
 				..Default::default()
 			},
-			theme_applied: false,
+			last_applied_theme: None,
 			phosphor_fonts_installed: false,
 		}
 	}
 }
 
-impl eframe::App for AMSAgentsApp {
+impl eframe::App for ArpsciApp {
 	fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
 		prepare_shell(
 			ctx,
-			&mut self.theme_applied,
+			self.ams_agents.catppuccin_theme,
+			&mut self.last_applied_theme,
 			&mut self.phosphor_fonts_installed,
 		);
 

@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use eframe::egui;
 
-use crate::agents::AMSAgents;
+use crate::agents::Arpsci;
 use crate::run::manifest::{
     APP_NAME, GraphSnapshot, MANIFEST_VERSION, ManifestNode, RunContext, RunManifest,
     RunRuntimeSettings, canonical_graph_signature, derive_experiment_id, export_manifest_to,
@@ -36,7 +36,7 @@ pub(crate) fn sync_evaluator_researcher_activity(agents: &mut [AgentRecord]) {
     }
 }
 
-impl AMSAgents {
+impl Arpsci {
     fn selected_model_option(&self) -> Option<String> {
         if self.selected_ollama_model.trim().is_empty() {
             None

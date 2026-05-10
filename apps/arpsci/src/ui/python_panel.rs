@@ -9,14 +9,14 @@ use crate::python::{
     create_runtime, default_registry_path, default_runtimes_dir, delete_runtime,
     install_packages_in_runtime, PythonRuntimeSpec, RuntimeRegistry,
 };
-use crate::agents::AMSAgents;
-use crate::ui::AMSAgentsUiState;
+use crate::agents::Arpsci;
+use crate::ui::ArpsciUiState;
 
-impl AMSAgents {
+impl Arpsci {
     pub(crate) fn render_python_panel(
         &mut self,
         ui: &mut egui::Ui,
-        ui_state: &mut AMSAgentsUiState,
+        ui_state: &mut ArpsciUiState,
     ) {
         let panel = &mut ui_state.python;
 

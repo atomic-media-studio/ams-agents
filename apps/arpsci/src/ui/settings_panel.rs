@@ -1,12 +1,12 @@
-use crate::agents::AMSAgents;
-use crate::ui::AMSAgentsUiState;
+use crate::agents::{Arpsci, CatppuccinTheme};
+use crate::ui::ArpsciUiState;
 use eframe::egui;
 use std::sync::atomic::Ordering;
 
 /// Preset values for how many recent agent messages are included in the next dialogue prompt.
 const CHAT_HISTORY_PRESETS: &[usize] = &[1, 2, 3, 5, 8, 10, 15, 20, 30, 50];
 
-impl AMSAgents {
+impl Arpsci {
     /// Chat / dialogue history size (Settings tab, above Reproducibility).
     fn render_chat_settings_widgets(&mut self, ui: &mut egui::Ui) {
         ui.label(egui::RichText::new("Chat Settings").strong().size(16.0));
@@ -46,7 +46,7 @@ impl AMSAgents {
         &mut self,
         ui: &mut egui::Ui,
         ctx: &egui::Context,
-        ui_state: &mut AMSAgentsUiState,
+        ui_state: &mut ArpsciUiState,
     ) {
         ui.vertical(|ui| {
             ui.label(egui::RichText::new("Ollama Settings").strong().size(16.0));
@@ -314,6 +314,47 @@ impl AMSAgents {
             if metrics_changed {
                 self.refresh_metrics_sink();
             }
+
+            ui.add_space(10.0);
+            ui.label(egui::RichText::new("Theme").strong().size(16.0));
+            ui.separator();
+            ui.horizontal(|ui| {
+                ui.label("Catppuccin Theme:");
+                egui::ComboBox::from_id_salt("catppuccin_theme_selector")
+                    .selected_text(match self.catppuccin_theme {
+                        CatppuccinTheme::Latte => "Latte",
+                        CatppuccinTheme::Frappe => "Frappe",
+                        CatppuccinTheme::Macchiato => "Macchiato",
+                        CatppuccinTheme::Mocha => "Mocha",
+                    })
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(
+                            &mut self.catppuccin_theme,
+                            CatppuccinTheme::Latte,
+                            "Latte",
+                        );
+                        ui.selectable_value(
+                            &mut self.catppuccin_theme,
+                            CatppuccinTheme::Frappe,
+                            "Frappe",
+                        );
+                        ui.selectable_value(
+                            &mut self.catppuccin_theme,
+                            CatppuccinTheme::Macchiato,
+                            "Macchiato",
+                        );
+                        ui.selectable_value(
+                            &mut self.catppuccin_theme,
+                            CatppuccinTheme::Mocha,
+                            "Mocha",
+                        );
+                    });
+            });
+            ui.label(
+                egui::RichText::new("Global UI palette for the app shell.")
+                    .small()
+                    .weak(),
+            );
         });
     }
 }

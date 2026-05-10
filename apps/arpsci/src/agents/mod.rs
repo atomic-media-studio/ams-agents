@@ -19,7 +19,21 @@ pub mod conversation_sidecars;
 pub mod dialogue;
 pub(crate) mod nodes_panel;
 
-pub struct AMSAgents {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CatppuccinTheme {
+    Latte,
+    Frappe,
+    Macchiato,
+    Mocha,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GlobalChatMode {
+    HumanToAgent,
+    AgentToAgent,
+}
+
+pub struct Arpsci {
     pub(crate) rt_handle: Handle,
     pub(crate) app_state: Arc<AppState>,
     pub(crate) selected_ollama_model: String,
@@ -61,9 +75,13 @@ pub struct AMSAgents {
     pub(crate) chat_turn_rx: Option<std::sync::mpsc::Receiver<AgentChatEvent>>,
     /// The room ID that was active when the last run started; agent turns are posted there.
     pub(crate) chat_active_room_id: Option<String>,
+    /// Global Overview chat mode selector.
+    pub(crate) chat_mode: GlobalChatMode,
+    /// Global UI theme for catppuccin egui shell.
+    pub(crate) catppuccin_theme: CatppuccinTheme,
 }
 
-impl AMSAgents {
+impl Arpsci {
     pub fn new(rt_handle: Handle) -> Self {
         let http_policy = crate::web::HttpPolicy::from_env();
         crate::web::set_policy(http_policy);
@@ -106,6 +124,8 @@ impl AMSAgents {
             chat_turn_tx: None,
             chat_turn_rx: None,
             chat_active_room_id: None,
+            chat_mode: GlobalChatMode::HumanToAgent,
+            catppuccin_theme: CatppuccinTheme::Latte,
         }
     }
 

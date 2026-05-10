@@ -6,12 +6,13 @@ use std::time::Duration;
 use eframe::egui;
 use egui_phosphor::regular;
 
-use crate::agents::AMSAgents;
+use crate::agents::Arpsci;
+use crate::agents::GlobalChatMode;
 use crate::agents::nodes_panel::{
     sync_evaluator_researcher_activity, AgentNodeKind, AgentRecord, NodePayload,
     PanelTab,
 };
-use crate::ui::AMSAgentsUiState;
+use crate::ui::ArpsciUiState;
 
 #[derive(Default)]
 pub(super) struct BasicNodeViewer;
@@ -22,8 +23,8 @@ impl BasicNodeViewer {
     }
 }
 
-impl AMSAgents {
-    pub(crate) fn render_nodes_panel(&mut self, ui: &mut egui::Ui, ui_state: &mut AMSAgentsUiState) {
+impl Arpsci {
+    pub(crate) fn render_nodes_panel(&mut self, ui: &mut egui::Ui, ui_state: &mut ArpsciUiState) {
         let panel_border_color = ui.visuals().widgets.noninteractive.bg_stroke.color;
         let nodes_panel = egui::Frame::default()
             .fill(ui.visuals().panel_fill)
@@ -182,6 +183,13 @@ impl AMSAgents {
                         let chat = CHAT.get_or_init(|| Mutex::new(ChatExample::new()));
                         let active_room_id = ACTIVE_ROOM_ID.get_or_init(|| Mutex::new(None));
                         let mut chat = chat.lock().unwrap();
+                        let graph_running = self
+                            .conversation_graph_running
+                            .load(Ordering::Acquire);
+                        let human_to_agent_mode =
+                            matches!(self.chat_mode, GlobalChatMode::HumanToAgent);
+                        chat.room_mode_human_agent = human_to_agent_mode;
+                        chat.set_main_input_enabled(human_to_agent_mode);
                         for item in chat.inbox.drain() {
                             let ts = ChatExample::display_time_for_message(&item);
                             chat.message_timestamps.push(ts);
@@ -228,6 +236,30 @@ impl AMSAgents {
                                 *active = Some(selected_id);
                             }
                         }
+
+                        ui.horizontal(|ui| {
+                            ui.label("Chat Mode:");
+                            ui.add_enabled_ui(!graph_running, |ui| {
+                                ui.selectable_value(
+                                    &mut self.chat_mode,
+                                    GlobalChatMode::HumanToAgent,
+                                    "Human -> Agent",
+                                );
+                                ui.selectable_value(
+                                    &mut self.chat_mode,
+                                    GlobalChatMode::AgentToAgent,
+                                    "Agent -> Agent",
+                                );
+                            });
+                            if graph_running {
+                                ui.label(
+                                    egui::RichText::new("(locked while graph is running)")
+                                        .small()
+                                        .weak(),
+                                );
+                            }
+                        });
+                        ui.add_space(4.0);
 
                         let split_height = ui.available_height() - 20.0; // Account for room selector and spacing
                         egui::Frame::default()
@@ -347,7 +379,7 @@ impl AMSAgents {
                                                                                         egui::Frame::new()
                                                                                             .fill(ui.visuals().widgets.inactive.bg_fill)
                                                                                             .stroke(egui::Stroke::new(0.5, ui.visuals().widgets.noninteractive.bg_stroke.color))
-                                                                                            .corner_radius(egui::CornerRadius::same(6))
+                                                                                            .corner_radius(egui::CornerRadius::same(2))
                                                                                             .inner_margin(egui::Margin::symmetric(6, 2))
                                                                                             .show(ui, |ui| {
                                                                                                 let ts = chat
@@ -370,7 +402,7 @@ impl AMSAgents {
                                                                                         egui::Frame::new()
                                                                                             .fill(ui.visuals().extreme_bg_color)
                                                                                             .stroke(egui::Stroke::new(0.5, ui.visuals().widgets.noninteractive.bg_stroke.color))
-                                                                                            .corner_radius(egui::CornerRadius::same(6))
+                                                                                            .corner_radius(egui::CornerRadius::same(2))
                                                                                             .inner_margin(egui::Margin::symmetric(8, 4))
                                                                                             .show(ui, |ui| {
                                                                                                 ui.set_max_width(ui.available_width());
@@ -392,38 +424,119 @@ impl AMSAgents {
                                     });
 
                                 ui.add_space(6.0);
-                                ui.horizontal(|ui| {
-                                    let response = ui.add(
-                                        egui::TextEdit::singleline(&mut chat.input_text)
-                                            .hint_text("Type a message")
-                                            .desired_width(300.0),
+                                if !human_to_agent_mode {
+                                    ui.label(
+                                        egui::RichText::new(
+                                            "Agent-to-agent mode active. Human input is disabled.",
+                                        )
+                                        .small()
+                                        .weak(),
                                     );
-                                    let send_clicked = ui
-                                        .add(egui::Button::new("Send"))
-                                        .clicked()
-                                        || (response.lost_focus()
-                                            && ui.input(|i| i.key_pressed(egui::Key::Enter)));
+                                }
+                                if *chat.waiting_for_response().lock().unwrap() {
+                                    ui.horizontal(|ui| {
+                                        ui.spinner();
+                                        ui.label(
+                                            egui::RichText::new("Waiting for assistant response...")
+                                                .small()
+                                                .weak(),
+                                        );
+                                    });
+                                }
+                                ui.add_enabled_ui(human_to_agent_mode, |ui| {
+                                    ui.horizontal(|ui| {
+                                        let response = ui.add(
+                                            egui::TextEdit::singleline(&mut chat.input_text)
+                                                .hint_text("Type a message")
+                                                .desired_width(300.0),
+                                        );
+                                        let send_clicked = ui
+                                            .add(egui::Button::new("Send"))
+                                            .clicked()
+                                            || (response.lost_focus()
+                                                && ui.input(|i| i.key_pressed(egui::Key::Enter)));
 
-                                    if send_clicked && !chat.input_text.trim().is_empty() {
-                                        let message_text = chat.input_text.trim().to_string();
-                                        chat.input_text.clear();
+                                        if send_clicked && !chat.input_text.trim().is_empty() {
+                                            let message_text = chat.input_text.trim().to_string();
+                                            chat.input_text.clear();
 
-                                        let user_message = ChatMessage {
-                                            content: message_text.clone(),
-                                            from: Some("Human".to_string()),
-                                            correlation: None,
-                                            source: MessageSource::Human,
-                                            api_auto_respond: false,
-                                            assistant_generation: None,
-                                        };
-                                        let ts = ChatExample::current_timestamp_string();
-                                        chat.messages.push(user_message.clone());
-                                        chat.message_timestamps.push(ts.clone());
+                                            let user_message = ChatMessage {
+                                                content: message_text.clone(),
+                                                from: Some("Human".to_string()),
+                                                correlation: None,
+                                                source: MessageSource::Human,
+                                                api_auto_respond: false,
+                                                assistant_generation: None,
+                                            };
+                                            let ts = ChatExample::current_timestamp_string();
+                                            chat.messages.push(user_message.clone());
+                                            chat.message_timestamps.push(ts.clone());
 
-                                        if let Some(room_id) = &chat.selected_room {
-                                            let _ = store.append_message(room_id, &user_message, &ts);
+                                            if let Some(room_id) = &chat.selected_room {
+                                                let _ = store.append_message(room_id, &user_message, &ts);
+                                            }
+
+                                            let tx = chat.inbox.sender();
+                                            let waiting = chat.waiting_for_response().clone();
+                                            let selected_room = chat.selected_room.clone();
+                                            let store_path = std::path::PathBuf::from("metrics/overview_chat.sqlite");
+                                            let model = self.selected_ollama_model.trim().to_string();
+                                            if model.is_empty() {
+                                                let _ = tx.send(ChatMessage {
+                                                    content: "Please select a global Ollama model in Settings.".to_string(),
+                                                    from: Some("System".to_string()),
+                                                    correlation: None,
+                                                    source: MessageSource::System,
+                                                    api_auto_respond: false,
+                                                    assistant_generation: None,
+                                                });
+                                            } else {
+                                                if let Ok(mut flag) = waiting.lock() {
+                                                    *flag = true;
+                                                }
+                                                self.rt_handle.spawn(async move {
+                                                    let request = vec![crate::ui::overview_chat::ollama::OllamaMessage {
+                                                        role: "user".to_string(),
+                                                        content: message_text,
+                                                    }];
+                                                    let out = crate::ui::overview_chat::ollama::chat(
+                                                        &model,
+                                                        &request,
+                                                        crate::ui::overview_chat::ollama::OllamaChatOptions::default(),
+                                                    )
+                                                    .await;
+                                                    let reply = match out {
+                                                        Ok(content) => ChatMessage {
+                                                            content: content.trim_end().to_string(),
+                                                            from: Some("Assistant".to_string()),
+                                                            correlation: None,
+                                                            source: MessageSource::Api,
+                                                            api_auto_respond: false,
+                                                            assistant_generation: None,
+                                                        },
+                                                        Err(e) => ChatMessage {
+                                                            content: format!("Ollama error: {e}"),
+                                                            from: Some("System".to_string()),
+                                                            correlation: None,
+                                                            source: MessageSource::System,
+                                                            api_auto_respond: false,
+                                                            assistant_generation: None,
+                                                        },
+                                                    };
+                                                    if let Some(room_id) = selected_room
+                                                        && let Ok(store) = crate::ui::overview_chat::store::Store::open(store_path)
+                                                    {
+                                                        let ts = ChatExample::display_time_for_message(&reply);
+                                                        let _ = store.append_message(&room_id, &reply, &ts);
+                                                    }
+                                                    let _ = tx.send(reply);
+                                                    if let Ok(mut flag) = waiting.lock() {
+                                                        *flag = false;
+                                                    }
+                                                });
+                                            }
                                         }
-                                    }
+                                    });
                                 });
                                 },
                             );

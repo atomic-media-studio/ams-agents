@@ -1,6 +1,6 @@
 # Conversation Engine
 
-The conversation engine lives in `src/agents/` and is driven from `AMSAgents::run_graph()`.
+The conversation engine lives in `src/agents/` and is driven from `Arpsci::run_graph()`.
 
 ## Run setup
 

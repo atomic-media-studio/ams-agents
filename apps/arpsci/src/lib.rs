@@ -10,5 +10,5 @@ pub mod ui;
 pub mod vault;
 pub mod web;
 
-pub use agents::AMSAgents;
-pub use ui::AMSAgentsApp;
+pub use agents::Arpsci;
+pub use ui::ArpsciApp;

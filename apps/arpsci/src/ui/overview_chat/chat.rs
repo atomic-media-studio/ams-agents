@@ -130,89 +130,77 @@ impl ChatExample {
             egui::vec2(ui.available_width(), rooms_section_height),
             egui::Layout::top_down(egui::Align::Min),
             |ui| {
-
-				ui.label("Interaction Mode");
-
-                ui.horizontal(|ui| {
-                    if ui
-                        .selectable_label(self.room_mode_human_agent, "Human-Agent")
-                        .clicked()
-                    {
-                        self.room_mode_human_agent = true;
-                    }
-                    if ui
-                        .selectable_label(!self.room_mode_human_agent, "Agent-Agent")
-                        .clicked()
-                    {
-                        self.room_mode_human_agent = false;
-                    }
-                });
-
-                ui.separator();
-                ui.label("Room Settings");
-
-                ui.horizontal(|ui| {
-                    if ui.button("New room").clicked() {
-                        let name = format!("Room {}", self.rooms.len() + 1);
-                        self.add_room(name, &mut store);
-                    }
-                    if ui
-                        .add_enabled(
-                            self.selected_room.is_some(),
-                            egui::Button::new("Clear Room"),
-                        )
-                        .on_hover_text("Clear messages in the current room")
-                        .clicked()
-                    {
-                        if let Some(room_id) = self.selected_room.as_ref() {
-                            let _ = store.delete_messages_for_conversation(room_id);
-                            self.messages.clear();
-                            self.message_timestamps.clear();
-                        }
-                    }
-                });
-
-                ui.separator();
-                ui.spacing_mut().item_spacing.y = 2.0;
-
-                let mut delete_room_id: Option<String> = None;
-                egui::ScrollArea::vertical()
-                    .max_height(rooms_list_height)
-                    .auto_shrink([false, false])
+                egui::Frame::new()
+                    .inner_margin(egui::Margin::symmetric(4, 0))
                     .show(ui, |ui| {
-                    for room in &self.rooms {
-                        let selected = self.selected_room.as_ref() == Some(&room.id);
+                        // ui.label("Room Settings");
+                        ui.label(egui::RichText::new("Room Settings").strong().size(16.0));
+
+
                         ui.horizontal(|ui| {
-                            let row_height = ui.spacing().interact_size.y;
-                            let x_width = row_height;
-                            let selectable_width =
-                                (ui.available_width() - x_width - ui.spacing().item_spacing.x)
-                                    .max(0.0);
-                            let label = egui::Button::new(&room.name).selected(selected);
-                            if ui
-                                .add_sized(egui::vec2(selectable_width, row_height), label)
-                                .clicked()
-                            {
-                                self.selected_room = Some(room.id.clone());
+                            if ui.button("New room").clicked() {
+                                let name = format!("Room {}", self.rooms.len() + 1);
+                                self.add_room(name, &mut store);
                             }
                             if ui
-                                .add_sized(egui::vec2(x_width, row_height), egui::Button::new("x"))
-                                .on_hover_text("Delete room")
+                                .add_enabled(
+                                    self.selected_room.is_some(),
+                                    egui::Button::new("Clear Room"),
+                                )
+                                .on_hover_text("Clear messages in the current room")
                                 .clicked()
                             {
-                                delete_room_id = Some(room.id.clone());
+                                if let Some(room_id) = self.selected_room.as_ref() {
+                                    let _ = store.delete_messages_for_conversation(room_id);
+                                    self.messages.clear();
+                                    self.message_timestamps.clear();
+                                }
                             }
                         });
-                    }
-                });
 
-                if let Some(id) = delete_room_id {
-                    self.rooms.retain(|r| r.id != id);
-                    let _ = store.delete_conversation(&id);
-                    if self.selected_room.as_deref() == Some(id.as_str()) {
-                        self.selected_room = self.rooms.first().map(|r| r.id.clone());
-                    }
-                }
+                        ui.separator();
+                        ui.spacing_mut().item_spacing.y = 2.0;
+
+                        let mut delete_room_id: Option<String> = None;
+                        egui::ScrollArea::vertical()
+                            .id_salt("overview_sidebar_rooms_scroll")
+                            .max_height(rooms_list_height)
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| {
+                                for room in &self.rooms {
+                                    let selected = self.selected_room.as_ref() == Some(&room.id);
+                                    ui.horizontal(|ui| {
+                                        let row_height = ui.spacing().interact_size.y;
+                                        let x_width = row_height;
+                                        let selectable_width =
+                                            (ui.available_width() - x_width - ui.spacing().item_spacing.x)
+                                                .max(0.0);
+                                        let label = egui::Button::new(&room.name).selected(selected);
+                                        if ui
+                                            .add_sized(egui::vec2(selectable_width, row_height), label)
+                                            .clicked()
+                                        {
+                                            self.selected_room = Some(room.id.clone());
+                                        }
+                                        if ui
+                                            .add_sized(egui::vec2(x_width, row_height), egui::Button::new("x"))
+                                            .on_hover_text("Delete room")
+                                            .clicked()
+                                        {
+                                            delete_room_id = Some(room.id.clone());
+                                        }
+                                    });
+                                }
+                            });
+
+                        if let Some(id) = delete_room_id {
+                            self.rooms.retain(|r| r.id != id);
+                            let _ = store.delete_conversation(&id);
+                            if self.selected_room.as_deref() == Some(id.as_str()) {
+                                self.selected_room = self.rooms.first().map(|r| r.id.clone());
+                            }
+                        }
+                    });
             },
         );
 
@@ -355,6 +343,7 @@ impl ChatExample {
             ui.vertical(|ui| {
                 let list_height = (ui.available_height() - 72.0).max(0.0);
                 ScrollArea::vertical()
+                    .id_salt("overview_messages_scroll")
                     .stick_to_bottom(true)
                     .max_height(list_height)
                     .show(ui, |ui| {

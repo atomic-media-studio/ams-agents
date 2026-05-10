@@ -1,4 +1,4 @@
-use arpsci::{AMSAgentsApp, web};
+use arpsci::{ArpsciApp, web};
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 
@@ -26,8 +26,8 @@ fn main() -> eframe::Result<()> {
     };
 
     eframe::run_native(
-        "arp-cogsci",
+        "ARPSCI v0.1",
         options,
-        Box::new(move |_cc| Ok(Box::new(AMSAgentsApp::new(rt_handle.clone())))),
+        Box::new(move |_cc| Ok(Box::new(ArpsciApp::new(rt_handle.clone())))),
     )
 }
