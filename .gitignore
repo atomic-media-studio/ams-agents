@@ -13,7 +13,7 @@ platform/__pycache__/
 binaries/*
 !binaries/.gitkeep
 
-python/
+
 
 .master_hash
 agents-workspace.json
