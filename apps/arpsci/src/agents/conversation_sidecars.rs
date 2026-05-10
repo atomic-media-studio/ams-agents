@@ -54,7 +54,7 @@ impl SidecarSchedulingPolicy {
     pub fn from_env() -> Self {
         let mut policy = Self::default();
 
-        policy.research = match std::env::var("AMS_RESEARCH_POLICY")
+        policy.research = match std::env::var("ARPSCI_RESEARCH_POLICY")
             .unwrap_or_else(|_| "inline".to_string())
             .to_lowercase()
             .as_str()
@@ -64,7 +64,7 @@ impl SidecarSchedulingPolicy {
             _ => ResearchExecutionPolicy::Inline,
         };
 
-        let raw_eval = std::env::var("AMS_EVALUATOR_POLICY")
+        let raw_eval = std::env::var("ARPSCI_EVALUATOR_POLICY")
             .unwrap_or_else(|_| "inline".to_string())
             .to_lowercase();
         policy.evaluator = if raw_eval == "off" {

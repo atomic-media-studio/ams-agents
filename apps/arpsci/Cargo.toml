@@ -1,9 +1,9 @@
 [package]
-name = "ams-agents"
+name = "arpsci"
 description = "A multi-agent dashboard application in Rust"
 version = "0.1.0"
 edition = "2024"
-default-run = "ams-agents"
+default-run = "arpsci"
 
 [dependencies]
 

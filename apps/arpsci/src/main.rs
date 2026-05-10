@@ -1,4 +1,4 @@
-use ams_agents::{AMSAgentsApp, web};
+use arpsci::{AMSAgentsApp, web};
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 
@@ -17,7 +17,7 @@ fn main() -> eframe::Result<()> {
     });
 
     if web::start_embedded_server_if_enabled(&rt_handle) {
-        eprintln!("Embedded Rocket server enabled (AMS_WEB_ENABLED=true)");
+        eprintln!("Embedded Rocket server enabled (ARPSCI_WEB_ENABLED=true)");
     }
 
     let options = eframe::NativeOptions {

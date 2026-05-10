@@ -11,9 +11,9 @@ class RustAppRunner:
     def __init__(self) -> None:
         # platform/src/api/rust_app_runner.py -> repo root is three parents up.
         self.repo_root = Path(__file__).resolve().parents[3]
-        self.app_dir = self.repo_root / "apps" / "ams-agents"
+        self.app_dir = self.repo_root / "apps" / "arpsci"
         self.app_target_dir = self.app_dir / "target"
-        self.app_binary = self.app_target_dir / "debug" / "ams-agents"
+        self.app_binary = self.app_target_dir / "debug" / "arpsci"
         self._lock = asyncio.Lock()
         self._process: asyncio.subprocess.Process | None = None
         self._reader_task: asyncio.Task[None] | None = None
@@ -53,7 +53,7 @@ class RustAppRunner:
             "cargo",
             "build",
             "-p",
-            "ams-agents",
+            "arpsci",
             "--target-dir",
             "target",
             cwd=str(self.app_dir),
@@ -65,7 +65,7 @@ class RustAppRunner:
         err = stderr.decode("utf-8", errors="replace")
 
         # Persist compile output in the same log tail panel for easy inspection.
-        self._append_log("\n$ (cd apps/ams-agents && cargo build -p ams-agents --target-dir target)\n")
+        self._append_log("\n$ (cd apps/arpsci && cargo build -p arpsci --target-dir target)\n")
         if out:
             self._append_log(out)
         if err:
@@ -94,12 +94,12 @@ class RustAppRunner:
                     return payload
 
             env = os.environ.copy()
-            env.setdefault("AMS_WEB_ENABLED", "true")
+            env.setdefault("ARPSCI_WEB_ENABLED", "true")
             # When platform runs in Docker and Rust runs on host, Rocket must bind
             # beyond loopback so the container can reach it via host.docker.internal.
             env.setdefault("ROCKET_ADDRESS", "0.0.0.0")
 
-            self._append_log("\n$ AMS_WEB_ENABLED=true apps/ams-agents/target/debug/ams-agents\n")
+            self._append_log("\n$ ARPSCI_WEB_ENABLED=true apps/arpsci/target/debug/arpsci\n")
             process = await asyncio.create_subprocess_exec(
                 str(self.app_binary),
                 cwd=str(self.repo_root),

@@ -4,7 +4,7 @@ FastAPI platform service for the ARP ecosystem.
 
 ## Runtime model
 
-- The Rust app (`apps/ams-agents`) exposes local Rocket APIs.
+- The Rust app (`apps/arpsci`) exposes local Rocket APIs.
 - This platform calls Rocket via HTTP using `httpx`.
 - No subprocess bridge is used in this first implementation.
 

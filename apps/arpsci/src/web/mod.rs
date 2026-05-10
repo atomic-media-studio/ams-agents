@@ -68,9 +68,9 @@ struct WebConfig {
 
 impl WebConfig {
     fn from_env() -> Self {
-        let enabled = parse_bool_env("AMS_WEB_ENABLED", false);
-        let address = std::env::var("AMS_WEB_ADDRESS").unwrap_or_else(|_| "127.0.0.1".to_string());
-        let port = std::env::var("AMS_WEB_PORT")
+        let enabled = parse_bool_env("ARPSCI_WEB_ENABLED", false);
+        let address = std::env::var("ARPSCI_WEB_ADDRESS").unwrap_or_else(|_| "127.0.0.1".to_string());
+        let port = std::env::var("ARPSCI_WEB_PORT")
             .ok()
             .and_then(|v| v.parse::<u16>().ok())
             .unwrap_or(8000);
@@ -84,7 +84,7 @@ impl WebConfig {
 }
 
 pub fn outbound_webhooks_enabled() -> bool {
-    parse_bool_env("AMS_WEBHOOKS_ENABLED", false)
+    parse_bool_env("ARPSCI_WEBHOOKS_ENABLED", false)
 }
 
 fn parse_bool_env(name: &str, default: bool) -> bool {
@@ -101,8 +101,8 @@ fn parse_bool_env(name: &str, default: bool) -> bool {
 impl HttpPolicy {
     pub fn from_env() -> HttpPolicy {
         HttpPolicy {
-            air_gap_enabled: parse_bool_env("AMS_AIR_GAP", false),
-            allow_local_ollama: parse_bool_env("AMS_ALLOW_LOCAL_OLLAMA", true),
+            air_gap_enabled: parse_bool_env("ARPSCI_AIR_GAP", false),
+            allow_local_ollama: parse_bool_env("ARPSCI_ALLOW_LOCAL_OLLAMA", true),
         }
     }
 }
@@ -621,14 +621,14 @@ fn build_outgoing_http_log_response() -> OutgoingHttpLogResponse {
 fn health() -> Json<HealthResponse> {
     Json(HealthResponse {
         status: "ok",
-        service: "ams-agents",
+        service: "arpsci",
     })
 }
 
 #[rocket::get("/capabilities")]
 fn capabilities() -> Json<CapabilitiesResponse> {
     Json(CapabilitiesResponse {
-        service: "ams-agents",
+        service: "arpsci",
         api_version: "v1",
         endpoints: vec!["/api/health", "/api/capabilities", "/api/bridge/ping"],
     })
@@ -638,7 +638,7 @@ fn capabilities() -> Json<CapabilitiesResponse> {
 fn bridge_ping(payload: Json<BridgePingRequest>) -> Json<BridgePingResponse> {
     Json(BridgePingResponse {
         status: "ok",
-        service: "ams-agents",
+        service: "arpsci",
         echoed_message: payload
             .message
             .clone()
@@ -816,7 +816,7 @@ mod tests {
 
     #[test]
     fn parse_bool_env_honors_default_when_unset() {
-        let key = "AMS_TEST_WEB_BOOL_MISSING";
+        let key = "ARPSCI_TEST_WEB_BOOL_MISSING";
         unsafe { std::env::remove_var(key) };
         assert!(!parse_bool_env(key, false));
         assert!(parse_bool_env(key, true));
@@ -824,7 +824,7 @@ mod tests {
 
     #[test]
     fn parse_bool_env_supports_truthy_values() {
-        let key = "AMS_TEST_WEB_BOOL_TRUE";
+        let key = "ARPSCI_TEST_WEB_BOOL_TRUE";
         unsafe { std::env::set_var(key, "yes") };
         assert!(parse_bool_env(key, false));
         unsafe { std::env::remove_var(key) };
@@ -832,7 +832,7 @@ mod tests {
 
     #[test]
     fn parse_bool_env_supports_falsey_values() {
-        let key = "AMS_TEST_WEB_BOOL_FALSE";
+        let key = "ARPSCI_TEST_WEB_BOOL_FALSE";
         unsafe { std::env::set_var(key, "off") };
         assert!(!parse_bool_env(key, true));
         unsafe { std::env::remove_var(key) };

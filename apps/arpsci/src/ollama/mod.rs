@@ -127,7 +127,7 @@ pub async fn send_to_ollama_with_result(
     } else {
         None
     };
-    let context_window = std::env::var("AMS_OLLAMA_CONTEXT_WINDOW")
+    let context_window = std::env::var("ARPSCI_OLLAMA_CONTEXT_WINDOW")
         .ok()
         .and_then(|v| v.parse::<u32>().ok());
     let engine = engine::InferenceEngine::from_host(ollama_host);

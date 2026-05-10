@@ -1,8 +1,8 @@
 //! Master-password gate (Argon2id) and a small encrypted [`Vault`] container.
 //!
-//! Configure with `AMS_MASTER_HASH` (PHC string) or a file at `runs/.master_hash` (first line).
-//! Optional Argon2id tuning via env: `AMS_ARGON2_M_KIB`, `AMS_ARGON2_T`, `AMS_ARGON2_P`.
-//! Set `AMS_SKIP_VAULT=1` to disable the gate (development only).
+//! Configure with `ARPSCI_MASTER_HASH` (PHC string) or a file at `runs/.master_hash` (first line).
+//! Optional Argon2id tuning via env: `ARPSCI_ARGON2_M_KIB`, `ARPSCI_ARGON2_T`, `ARPSCI_ARGON2_P`.
+//! Set `ARPSCI_SKIP_VAULT=1` to disable the gate (development only).
 
 use argon2::password_hash::rand_core::{OsRng, RngCore};
 use argon2::{Algorithm, Argon2, Params, PasswordHash, PasswordVerifier, Version};
@@ -77,9 +77,9 @@ impl VaultKdfParams {
     pub fn from_env() -> Self {
         let defaults = Self::default();
         Self {
-            memory_cost_kib: parse_u32_env("AMS_ARGON2_M_KIB").unwrap_or(defaults.memory_cost_kib),
-            time_cost: parse_u32_env("AMS_ARGON2_T").unwrap_or(defaults.time_cost),
-            parallelism: parse_u32_env("AMS_ARGON2_P").unwrap_or(defaults.parallelism),
+            memory_cost_kib: parse_u32_env("ARPSCI_ARGON2_M_KIB").unwrap_or(defaults.memory_cost_kib),
+            time_cost: parse_u32_env("ARPSCI_ARGON2_T").unwrap_or(defaults.time_cost),
+            parallelism: parse_u32_env("ARPSCI_ARGON2_P").unwrap_or(defaults.parallelism),
         }
     }
 }
@@ -210,8 +210,8 @@ pub struct MasterVault {
 
 impl MasterVault {
     pub fn new() -> Self {
-        let skip_vault = std::env::var("AMS_SKIP_VAULT").unwrap_or_default() == "1";
-        let stored_hash = std::env::var("AMS_MASTER_HASH")
+        let skip_vault = std::env::var("ARPSCI_SKIP_VAULT").unwrap_or_default() == "1";
+        let stored_hash = std::env::var("ARPSCI_MASTER_HASH")
             .ok()
             .filter(|s| !s.trim().is_empty())
             .or_else(|| {
@@ -249,7 +249,7 @@ impl MasterVault {
         }
         if self.stored_hash.is_empty() {
             self.status =
-                "No master hash configured. Set AMS_MASTER_HASH or create runs/.master_hash."
+                "No master hash configured. Set ARPSCI_MASTER_HASH or create runs/.master_hash."
                     .to_string();
             self.unlocked = false;
             return;
@@ -303,13 +303,13 @@ impl MasterVault {
     pub fn show_unlock_ui(&mut self, ui: &mut egui::Ui) {
         ui.heading("Unlock");
         if self.skip_vault {
-            ui.label("Vault gate is disabled (AMS_SKIP_VAULT=1).");
+            ui.label("Vault gate is disabled (ARPSCI_SKIP_VAULT=1).");
             return;
         }
         if self.stored_hash.is_empty() {
             ui.label(self.status.clone());
             ui.label(format!(
-                "Create `{}` with one line (PHC Argon2id hash), or set AMS_MASTER_HASH.",
+                "Create `{}` with one line (PHC Argon2id hash), or set ARPSCI_MASTER_HASH.",
                 DEFAULT_HASH_FILE
             ));
             return;

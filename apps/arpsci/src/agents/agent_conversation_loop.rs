@@ -43,11 +43,11 @@ fn parse_bool_env(name: &str, default: bool) -> bool {
 }
 
 fn chat_stream_enabled() -> bool {
-    parse_bool_env("AMS_CHAT_STREAM_ENABLED", true)
+    parse_bool_env("ARPSCI_CHAT_STREAM_ENABLED", true)
 }
 
 fn conversation_http_stream_enabled() -> bool {
-    parse_bool_env("AMS_CONVERSATION_HTTP_STREAM_ENABLED", false)
+    parse_bool_env("ARPSCI_CONVERSATION_HTTP_STREAM_ENABLED", false)
 }
 
 #[derive(Clone)]

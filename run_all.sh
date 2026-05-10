@@ -6,6 +6,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 URL_DASHBOARD="http://localhost:8080/"
 URL_DOCS="http://localhost:8081/"
+URL_HOST_RUNNER="http://localhost:8090/health"
 
 build_host_command() {
 	printf '%s' "set -euo pipefail; trap 'rc=\$?; if [[ \$rc -ne 0 ]]; then echo; echo [run_all] host_runner failed with exit code \$rc; fi; exec bash' EXIT; cd \"$ROOT_DIR/platform\"; uv sync --dev; uv run uvicorn src.host_runner_main:app --host 0.0.0.0 --port 8090"
@@ -41,20 +42,22 @@ launch_terminal() {
 
 open_urls() {
 	if command -v google-chrome >/dev/null 2>&1; then
-		google-chrome --new-window "$URL_DASHBOARD" --new-tab "$URL_DOCS" >/dev/null 2>&1 &
+		google-chrome --new-window "$URL_DASHBOARD" --new-tab "$URL_DOCS" --new-tab "$URL_HOST_RUNNER" >/dev/null 2>&1 &
 	elif command -v google-chrome-stable >/dev/null 2>&1; then
-		google-chrome-stable --new-window "$URL_DASHBOARD" --new-tab "$URL_DOCS" >/dev/null 2>&1 &
+		google-chrome-stable --new-window "$URL_DASHBOARD" --new-tab "$URL_DOCS" --new-tab "$URL_HOST_RUNNER" >/dev/null 2>&1 &
 	elif command -v chromium >/dev/null 2>&1; then
-		chromium --new-window "$URL_DASHBOARD" --new-tab "$URL_DOCS" >/dev/null 2>&1 &
+		chromium --new-window "$URL_DASHBOARD" --new-tab "$URL_DOCS" --new-tab "$URL_HOST_RUNNER" >/dev/null 2>&1 &
 	elif command -v chromium-browser >/dev/null 2>&1; then
-		chromium-browser --new-window "$URL_DASHBOARD" --new-tab "$URL_DOCS" >/dev/null 2>&1 &
+		chromium-browser --new-window "$URL_DASHBOARD" --new-tab "$URL_DOCS" --new-tab "$URL_HOST_RUNNER" >/dev/null 2>&1 &
 	elif command -v xdg-open >/dev/null 2>&1; then
 		xdg-open "$URL_DASHBOARD" >/dev/null 2>&1 &
 		xdg-open "$URL_DOCS" >/dev/null 2>&1 &
+		xdg-open "$URL_HOST_RUNNER" >/dev/null 2>&1 &
 	else
 		echo "Could not open browser automatically. Open these manually:"
 		echo "  $URL_DASHBOARD"
 		echo "  $URL_DOCS"
+		echo "  $URL_HOST_RUNNER"
 	fi
 }
 
@@ -67,5 +70,6 @@ launch_terminal "$docker_command" >/dev/null
 open_urls
 
 echo "Started services in new terminals."
-echo "Dashboard: $URL_DASHBOARD"
-echo "Docs:      $URL_DOCS"
+echo "Dashboard:   $URL_DASHBOARD"
+echo "Docs:        $URL_DOCS"
+echo "Host runner: $URL_HOST_RUNNER"

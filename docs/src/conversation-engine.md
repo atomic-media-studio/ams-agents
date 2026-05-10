@@ -15,7 +15,7 @@ Starting a run now does more than just spawn a pair loop.
 5. builds evaluator/researcher sidecar config from the node graph,
 6. groups workers into conversations and spawns one async loop per group.
 
-Grouping behavior is driven by `AMS_CONVERSATION_GROUP_SIZE`.
+Grouping behavior is driven by `ARPSCI_CONVERSATION_GROUP_SIZE`.
 
 - When the value is `2`, explicit `partner_worker` links are preserved where possible and the remaining workers are paired by row order.
 - When the value is `3` or higher, workers are chunked by sorted row order into larger conversation groups.
@@ -56,8 +56,8 @@ Sidecars are first-class parts of the conversation engine now.
 
 Scheduling is controlled by environment variables:
 
-- `AMS_RESEARCH_POLICY`: `off`, `inline`, or `background`
-- `AMS_EVALUATOR_POLICY`: `off`, `inline`, or `batched:N`
+- `ARPSCI_RESEARCH_POLICY`: `off`, `inline`, or `background`
+- `ARPSCI_EVALUATOR_POLICY`: `off`, `inline`, or `batched:N`
 
 Research sidecars are targeted to specific workers through the graph wiring, and evaluator/researcher HTTP posts go through the same outbound HTTP policy as conversation streaming.
 

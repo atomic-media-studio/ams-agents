@@ -13,14 +13,14 @@ use super::play_plan::{
 
 impl AMSAgents {
     fn should_log_play_plan() -> bool {
-        std::env::var("AMS_LOG_PLAY_PLAN")
+        std::env::var("ARPSCI_LOG_PLAY_PLAN")
             .ok()
             .map(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
             .unwrap_or(false)
     }
 
     fn conversation_group_size() -> usize {
-        std::env::var("AMS_CONVERSATION_GROUP_SIZE")
+        std::env::var("ARPSCI_CONVERSATION_GROUP_SIZE")
             .ok()
             .and_then(|v| v.parse::<usize>().ok())
             .unwrap_or(2)

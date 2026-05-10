@@ -6,12 +6,12 @@ The desktop app starts behind `MasterVault` unless vault skipping is explicitly 
 
 The unlock gate accepts a PHC-format Argon2id hash from either:
 
-- `AMS_MASTER_HASH`, or
+- `ARPSCI_MASTER_HASH`, or
 - the first line of `runs/.master_hash`.
 
 Important current behavior:
 
-- `AMS_SKIP_VAULT` is treated as enabled only when it equals `1`.
+- `ARPSCI_SKIP_VAULT` is treated as enabled only when it equals `1`.
 - if no stored hash is configured, the unlock UI stays on screen and tells the operator how to provide one.
 - the UI adds a top lock bar after unlock so the workspace can be re-locked without restarting the app.
 
@@ -23,7 +23,7 @@ The internal `Vault` type is a small encrypted blob container, not a general per
 - HKDF-SHA256 expansion,
 - ChaCha20-Poly1305 for authenticated encryption.
 
-Argon2 parameters are configurable through `AMS_ARGON2_M_KIB`, `AMS_ARGON2_T`, and `AMS_ARGON2_P`.
+Argon2 parameters are configurable through `ARPSCI_ARGON2_M_KIB`, `ARPSCI_ARGON2_T`, and `ARPSCI_ARGON2_P`.
 
 ## Outbound HTTP policy
 
@@ -46,8 +46,8 @@ The loopback check currently treats `localhost` and loopback IP literals as loca
 
 The current code keeps inbound and outbound web features separate.
 
-- `AMS_WEB_ENABLED` controls the embedded Rocket server.
-- `AMS_WEBHOOKS_ENABLED` controls outbound webhook POSTs.
+- `ARPSCI_WEB_ENABLED` controls the embedded Rocket server.
+- `ARPSCI_WEBHOOKS_ENABLED` controls outbound webhook POSTs.
 
 Enabling Rocket does not automatically enable outbound posts, and disabling webhooks does not disable the local API.
 

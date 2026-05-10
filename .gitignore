@@ -32,3 +32,5 @@ exp_*/
 docs/book/
 
 __pycache__/
+
+.master_hash

@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const MANIFEST_VERSION: &str = "2.0.0";
-pub const APP_NAME: &str = "ams-agents";
+pub const APP_NAME: &str = "arpsci";
 
 static RUN_COUNTER: AtomicU64 = AtomicU64::new(0);
 
